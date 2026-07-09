@@ -8,9 +8,9 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
 
 const PLAN_MAP = {
   // Replace with real Stripe price IDs
-  price_starter: { plan: 'starter', hours: 10 },
-  price_growth:  { plan: 'growth',  hours: 25 },
-  price_pro:     { plan: 'pro',     hours: 60 },
+  "price_1ToKspHTjUJCdbgvSu1udGJC": { plan: 'starter', hours: 10 },
+  "price_1ToKu7HTjUJCdbgvcLG0Qni0":  { plan: 'growth',  hours: 25 },
+  "price_1ToKuUHTjUJCdbgv7XRLSwIk":     { plan: 'pro',     hours: 60 },
 }
 
 // Create Stripe checkout session
