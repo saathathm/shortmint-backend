@@ -19,12 +19,6 @@ const authenticateJWT = async (req, res, next) => {
     // Use Supabase to validate token — works for both HS256 and ES256
     const { data, error } = await supabaseAuth.auth.getUser(token)
 
-    console.log('getUser result:', JSON.stringify({
-      error: error?.message,
-      userId: data?.user?.id,
-      email: data?.user?.email
-    }))
-
     if (error || !data.user) {
       return res.status(401).json({ error: 'Invalid or expired token' })
     }
