@@ -10,8 +10,16 @@ const authenticateJWT = async (req, res, next) => {
 
     const token = authHeader.split(' ')[1]
 
-    // Verify using Supabase JWT secret
-    const decoded = jwt.verify(token, process.env.SUPABASE_JWT_SECRET)
+    // Supabase JWT secret needs to be used as-is (it's already the raw secret)
+    // but we need to try both raw and base64 decoded
+    let decoded
+    try {
+      decoded = jwt.verify(token, process.env.SUPABASE_JWT_SECRET)
+    } catch (e) {
+      // Try base64 decoded version
+      const secret = Buffer.from(process.env.SUPABASE_JWT_SECRET, 'base64')
+      decoded = jwt.verify(token, secret)
+    }
 
     // Fetch client row using service role (bypasses RLS)
     const { data: client, error } = await supabase
@@ -31,7 +39,7 @@ const authenticateJWT = async (req, res, next) => {
     if (err.name === 'TokenExpiredError') {
       return res.status(401).json({ error: 'Token expired' })
     }
-    return res.status(401).json({ error: 'Invalid token' })
+    return res.status(401).json({ error: 'Invalid token', detail: err.message })
   }
 }
 
