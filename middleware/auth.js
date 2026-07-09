@@ -1,4 +1,10 @@
-const jwt = require('jsonwebtoken')
+const { createClient } = require('@supabase/supabase-js')
+
+const supabaseAuth = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+)
+
 const supabase = require('../lib/supabase')
 
 const authenticateJWT = async (req, res, next) => {
@@ -10,36 +16,29 @@ const authenticateJWT = async (req, res, next) => {
 
     const token = authHeader.split(' ')[1]
 
-    // Supabase JWT secret needs to be used as-is (it's already the raw secret)
-    // but we need to try both raw and base64 decoded
-    let decoded
-    try {
-      decoded = jwt.verify(token, process.env.SUPABASE_JWT_SECRET)
-    } catch (e) {
-      // Try base64 decoded version
-      const secret = Buffer.from(process.env.SUPABASE_JWT_SECRET, 'base64')
-      decoded = jwt.verify(token, secret)
+    // Use Supabase to validate token — works for both HS256 and ES256
+    const { data, error } = await supabaseAuth.auth.getUser(token)
+
+    if (error || !data.user) {
+      return res.status(401).json({ error: 'Invalid or expired token' })
     }
 
-    // Fetch client row using service role (bypasses RLS)
-    const { data: client, error } = await supabase
+    // Fetch client row
+    const { data: client, error: clientError } = await supabase
       .from('clients')
       .select('*')
-      .eq('id', decoded.sub)
+      .eq('id', data.user.id)
       .single()
 
-    if (error || !client) {
+    if (clientError || !client) {
       return res.status(401).json({ error: 'Client not found' })
     }
 
-    req.user = decoded
+    req.user = data.user
     req.client = client
     next()
   } catch (err) {
-    if (err.name === 'TokenExpiredError') {
-      return res.status(401).json({ error: 'Token expired' })
-    }
-    return res.status(401).json({ error: 'Invalid token', detail: err.message })
+    return res.status(401).json({ error: 'Authentication failed', detail: err.message })
   }
 }
 
