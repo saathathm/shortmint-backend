@@ -152,6 +152,45 @@ router.post('/process', authenticateJWT, async (req, res) => {
   }
 })
 
+const { execSync } = require('child_process')
+
+// GET /api/video/info?url=...
+router.get('/info', authenticateJWT, async (req, res) => {
+  try {
+    const { url } = req.query
+    if (!url) return res.status(400).json({ error: 'URL is required' })
+
+    try { new URL(url) } catch {
+      return res.status(400).json({ error: 'Invalid URL format' })
+    }
+
+    const output = execSync(
+      `yt-dlp --no-playlist --dump-json "${url}"`,
+      { encoding: 'utf8', timeout: 30000 }
+    )
+
+    const data = JSON.parse(output)
+
+    return res.json({
+      title: data.title || 'Untitled',
+      duration: data.duration || 0,
+      thumbnail: data.thumbnail || null,
+      webpage_url: data.webpage_url || url,
+      id: data.id || null,
+      platform: data.extractor_key?.toLowerCase() || 'unknown'
+    })
+  } catch (err) {
+    console.error('Video info error:', err.message)
+    if (err.message?.includes('private') || err.message?.includes('login')) {
+      return res.status(400).json({ error: 'This video is private or requires login.' })
+    }
+    if (err.message?.includes('not found') || err.message?.includes('404')) {
+      return res.status(400).json({ error: 'Video not found. Please check the URL.' })
+    }
+    return res.status(400).json({ error: 'Could not fetch video info. Check the URL and try again.' })
+  }
+})
+
 // GET /api/video/status/:videoId
 router.get('/status/:videoId', authenticateJWT, async (req, res) => {
   try {
@@ -272,43 +311,6 @@ router.delete('/:videoId', authenticateJWT, async (req, res) => {
   }
 })
 
-const { execSync } = require('child_process')
 
-// GET /api/video/info?url=...
-router.get('/info', authenticateJWT, async (req, res) => {
-  try {
-    const { url } = req.query
-    if (!url) return res.status(400).json({ error: 'URL is required' })
-
-    try { new URL(url) } catch {
-      return res.status(400).json({ error: 'Invalid URL format' })
-    }
-
-    const output = execSync(
-      `yt-dlp --no-playlist --dump-json "${url}"`,
-      { encoding: 'utf8', timeout: 30000 }
-    )
-
-    const data = JSON.parse(output)
-
-    return res.json({
-      title: data.title || 'Untitled',
-      duration: data.duration || 0,
-      thumbnail: data.thumbnail || null,
-      webpage_url: data.webpage_url || url,
-      id: data.id || null,
-      platform: data.extractor_key?.toLowerCase() || 'unknown'
-    })
-  } catch (err) {
-    console.error('Video info error:', err.message)
-    if (err.message?.includes('private') || err.message?.includes('login')) {
-      return res.status(400).json({ error: 'This video is private or requires login.' })
-    }
-    if (err.message?.includes('not found') || err.message?.includes('404')) {
-      return res.status(400).json({ error: 'Video not found. Please check the URL.' })
-    }
-    return res.status(400).json({ error: 'Could not fetch video info. Check the URL and try again.' })
-  }
-})
 
 module.exports = router
