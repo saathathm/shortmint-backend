@@ -101,6 +101,18 @@ router.post('/process', authenticateJWT, async (req, res) => {
       })
     }
 
+    // Validate selected range usage
+    if (start_seconds !== undefined && end_seconds !== undefined) {
+      const selectedHours = (end_seconds - start_seconds) / 3600
+      const hoursRemaining = hoursLimit - hoursUsed
+      if (selectedHours > hoursRemaining) {
+        return res.status(403).json({
+          error: `This selection uses ${selectedHours.toFixed(2)} hrs but you only have ${hoursRemaining.toFixed(2)} hrs remaining. Adjust the range or upgrade your plan.`,
+          upgrade_required: true
+        })
+      }
+    }
+
     // Create video row immediately
     const { data: video, error: videoError } = await supabase
       .from('videos')
