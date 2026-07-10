@@ -48,7 +48,7 @@ const detectPlatform = (url) => {
 // POST /api/video/process
 router.post('/process', authenticateJWT, async (req, res) => {
   try {
-    const { video_url, style } = req.body
+    const { video_url, style, start_seconds, end_seconds } = req.body
     const client = req.client
 
     // Validate inputs
@@ -119,7 +119,7 @@ router.post('/process', authenticateJWT, async (req, res) => {
     }
 
     // Fire n8n webhook without waiting
-    processVideo(video_url, client.id, style, video.id).catch((err) => {
+    processVideo(video_url, client.id, style, video.id, start_seconds, end_seconds).catch((err) => {
       console.error('n8n webhook error (non-blocking):', err.message)
       // Update video to failed if n8n call itself fails
       supabase.from('videos').update({
@@ -257,6 +257,45 @@ router.delete('/:videoId', authenticateJWT, async (req, res) => {
   } catch (err) {
     console.error('Delete error:', err)
     return res.status(500).json({ error: 'Failed to delete video.' })
+  }
+})
+
+const { execSync } = require('child_process')
+
+// GET /api/video/info?url=...
+router.get('/info', authenticateJWT, async (req, res) => {
+  try {
+    const { url } = req.query
+    if (!url) return res.status(400).json({ error: 'URL is required' })
+
+    try { new URL(url) } catch {
+      return res.status(400).json({ error: 'Invalid URL format' })
+    }
+
+    const output = execSync(
+      `yt-dlp --no-playlist --dump-json "${url}"`,
+      { encoding: 'utf8', timeout: 30000 }
+    )
+
+    const data = JSON.parse(output)
+
+    return res.json({
+      title: data.title || 'Untitled',
+      duration: data.duration || 0,
+      thumbnail: data.thumbnail || null,
+      webpage_url: data.webpage_url || url,
+      id: data.id || null,
+      platform: data.extractor_key?.toLowerCase() || 'unknown'
+    })
+  } catch (err) {
+    console.error('Video info error:', err.message)
+    if (err.message?.includes('private') || err.message?.includes('login')) {
+      return res.status(400).json({ error: 'This video is private or requires login.' })
+    }
+    if (err.message?.includes('not found') || err.message?.includes('404')) {
+      return res.status(400).json({ error: 'Video not found. Please check the URL.' })
+    }
+    return res.status(400).json({ error: 'Could not fetch video info. Check the URL and try again.' })
   }
 })
 
