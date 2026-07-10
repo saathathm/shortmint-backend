@@ -48,7 +48,7 @@ const detectPlatform = (url) => {
 // POST /api/video/process
 router.post('/process', authenticateJWT, async (req, res) => {
   try {
-    const { video_url, style, start_seconds, end_seconds } = req.body
+    const { video_url, style, start_seconds, end_seconds, video_info } = req.body
     const client = req.client
 
     // Validate inputs
@@ -111,6 +111,15 @@ router.post('/process', authenticateJWT, async (req, res) => {
           upgrade_required: true
         })
       }
+    } else if (video_info?.duration) {
+      const fullHours = parseFloat(video_info.duration) / 3600
+      const hoursRemaining = hoursLimit - hoursUsed
+      if (fullHours > hoursRemaining) {
+        return res.status(403).json({
+          error: `This video uses ${fullHours.toFixed(2)} hrs but you only have ${hoursRemaining.toFixed(2)} hrs remaining. Upgrade your plan.`,
+          upgrade_required: true
+        })
+      }
     }
 
     // Create video row immediately
@@ -121,6 +130,9 @@ router.post('/process', authenticateJWT, async (req, res) => {
         youtube_url: video_url,
         style,
         status: 'pending',
+        title: video_info?.title || null,
+        duration_minutes: video_info?.duration ? parseFloat(video_info.duration) / 60 : null,
+        video_id: video_info?.id || null,
       })
       .select()
       .single()
@@ -131,7 +143,7 @@ router.post('/process', authenticateJWT, async (req, res) => {
     }
 
     // Fire n8n webhook without waiting
-    processVideo(video_url, client.id, style, video.id, start_seconds, end_seconds).catch((err) => {
+    processVideo(video_url, client.id, style, video.id, start_seconds, end_seconds, video_info).catch((err) => {
       console.error('n8n webhook error (non-blocking):', err.message)
       // Update video to failed if n8n call itself fails
       supabase.from('videos').update({
