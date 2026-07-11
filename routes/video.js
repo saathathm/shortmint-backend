@@ -139,7 +139,7 @@ router.post('/process', authenticateJWT, async (req, res) => {
 
     if (videoError || !video) {
       console.error('Failed to create video row:', videoError?.message)
-      return res.status(500).json({ error: 'Failed to start processing. Please try again.' })
+      return res.status(500).json({ error: 'Failed to start processing. Please try again.', message: videoError?.message || null })
     }
 
     // Fire n8n webhook without waiting
@@ -148,7 +148,7 @@ router.post('/process', authenticateJWT, async (req, res) => {
       // Update video to failed if n8n call itself fails
       supabase.from('videos').update({
         status: 'failed',
-        error_message: 'Failed to start processing. Please try again.'
+        error_message: `Failed to start processing. Please try again. Error: ${err.message}`
       }).eq('id', video.id).then(() => { })
     })
 
@@ -160,7 +160,7 @@ router.post('/process', authenticateJWT, async (req, res) => {
 
   } catch (err) {
     console.error('Process video error:', err)
-    return res.status(500).json({ error: 'Something went wrong. Please try again.' })
+    return res.status(500).json({ error: 'Something went wrong. Please try again.', message: err.message || null})
   }
 })
 
@@ -194,12 +194,12 @@ router.get('/info', authenticateJWT, async (req, res) => {
   } catch (err) {
     console.error('Video info error:', err.message)
     if (err.message?.includes('private') || err.message?.includes('login')) {
-      return res.status(400).json({ error: 'This video is private or requires login.' })
+      return res.status(400).json({ error: 'This video is private or requires login.', message: err.message || null })
     }
     if (err.message?.includes('not found') || err.message?.includes('404')) {
-      return res.status(400).json({ error: 'Video not found. Please check the URL.' })
+      return res.status(400).json({ error: 'Video not found. Please check the URL.', message: err.message || null })
     }
-    return res.status(400).json({ error: 'Could not fetch video info. Check the URL and try again.' })
+    return res.status(400).json({ error: 'Could not fetch video info. Check the URL and try again.', message: err.message || null })
   }
 })
 
@@ -247,7 +247,7 @@ router.get('/status/:videoId', authenticateJWT, async (req, res) => {
 
   } catch (err) {
     console.error('Status error:', err)
-    return res.status(500).json({ error: 'Failed to check status.' })
+    return res.status(500).json({ error: 'Failed to check status.', message: err.message || null })
   }
 })
 
@@ -261,11 +261,11 @@ router.get('/history', authenticateJWT, async (req, res) => {
       .order('created_at', { ascending: false })
       .limit(50)
 
-    if (error) return res.status(500).json({ error: 'Failed to load history.' })
+    if (error) return res.status(500).json({ error: 'Failed to load history.', message: error.message || null })
     return res.json({ videos: data })
   } catch (err) {
     console.error('History error:', err)
-    return res.status(500).json({ error: 'Internal server error.' })
+    return res.status(500).json({ error: 'Internal server error.', message: err.message || null })
   }
 })
 
@@ -281,7 +281,7 @@ router.get('/results/:videoId', authenticateJWT, async (req, res) => {
       .eq('client_id', req.client.id)
       .single()
 
-    if (vError || !video) return res.status(404).json({ error: 'Video not found.' })
+    if (vError || !video) return res.status(404).json({ error: 'Video not found.', message: vError?.message || null })
 
     const { data: clips } = await supabase
       .from('clips')
@@ -293,7 +293,7 @@ router.get('/results/:videoId', authenticateJWT, async (req, res) => {
     return res.json({ video, clips: clips || [] })
   } catch (err) {
     console.error('Results error:', err)
-    return res.status(500).json({ error: 'Internal server error.' })
+    return res.status(500).json({ error: 'Internal server error.', message: err.message || null })
   }
 })
 
@@ -319,7 +319,7 @@ router.delete('/:videoId', authenticateJWT, async (req, res) => {
     return res.json({ success: true })
   } catch (err) {
     console.error('Delete error:', err)
-    return res.status(500).json({ error: 'Failed to delete video.' })
+    return res.status(500).json({ error: 'Failed to delete video.', message: err.message || null })
   }
 })
 
