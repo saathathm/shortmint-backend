@@ -144,12 +144,7 @@ router.post('/process', authenticateJWT, async (req, res) => {
 
     // Fire n8n webhook without waiting
     processVideo(video_url, client.id, style, video.id, start_seconds, end_seconds, video_info).catch((err) => {
-      console.error('n8n webhook error (non-blocking):', err.message)
-      // Update video to failed if n8n call itself fails
-      supabase.from('videos').update({
-        status: 'failed',
-        error_message: `Failed to start processing. Please try again. Error: ${err.message}`
-      }).eq('id', video.id).then(() => { })
+      console.log('n8n connection closed (expected):', err.message)
     })
 
     // Return immediately with video_id
@@ -160,7 +155,7 @@ router.post('/process', authenticateJWT, async (req, res) => {
 
   } catch (err) {
     console.error('Process video error:', err)
-    return res.status(500).json({ error: 'Something went wrong. Please try again.', message: err.message || null})
+    return res.status(500).json({ error: 'Something went wrong. Please try again.', message: err.message || null })
   }
 })
 
