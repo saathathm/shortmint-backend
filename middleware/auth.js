@@ -19,6 +19,8 @@ const authenticateJWT = async (req, res, next) => {
     // Use Supabase to validate token — works for both HS256 and ES256
     const { data, error } = await supabaseAuth.auth.getUser(token)
 
+    console.log('getUser:', data?.user?.id, data?.user?.email, error?.message)
+
     if (error || !data.user) {
       return res.status(401).json({ error: 'Invalid or expired token' })
     }
@@ -31,6 +33,7 @@ const authenticateJWT = async (req, res, next) => {
       .single()
 
     if (clientError || !client) {
+      console.log('Client not found for id:', data.user.id, 'error:', clientError?.message)
       return res.status(401).json({ error: 'Client not found' })
     }
 
