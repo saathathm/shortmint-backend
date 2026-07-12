@@ -16,10 +16,8 @@ const authenticateJWT = async (req, res, next) => {
 
     const token = authHeader.split(' ')[1]
 
-    // Use Supabase to validate token — works for both HS256 and ES256
-    const { data, error } = await supabaseAuth.auth.getUser(token)
-
-    console.log('getUser:', data?.user?.id, data?.user?.email, error?.message)
+    // Validate token using shared supabase instance
+    const { data, error } = await supabase.auth.getUser(token)
 
     if (error || !data.user) {
       return res.status(401).json({ error: 'Invalid or expired token' })
@@ -33,8 +31,31 @@ const authenticateJWT = async (req, res, next) => {
       .single()
 
     if (clientError || !client) {
-      console.log('Client not found for id:', data.user.id, 'error:', clientError?.message)
-      return res.status(401).json({ error: 'Client not found' })
+      // Auto-create client row for new OAuth users
+      const name = data.user.user_metadata?.full_name ||
+        data.user.user_metadata?.name ||
+        data.user.email
+
+      const { data: newClient, error: createError } = await supabase
+        .from('clients')
+        .upsert({
+          id: data.user.id,
+          name,
+          email: data.user.email,
+          password_hash: 'managed_by_supabase_auth',
+          plan: 'trial',
+          usage_hours_used: 0,
+        }, { onConflict: 'id' })
+        .select()
+        .single()
+
+      if (createError || !newClient) {
+        return res.status(401).json({ error: 'Could not create client record' })
+      }
+
+      req.user = data.user
+      req.client = newClient
+      return next()
     }
 
     req.user = data.user
