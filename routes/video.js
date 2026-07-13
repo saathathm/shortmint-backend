@@ -13,30 +13,14 @@ const PLATFORM_TIERS = {
 }
 
 const PLATFORM_PATTERNS = [
-  {
-    name: 'youtube', pattern: /(?:youtube\.com\/(?:watch\?.*v=|shorts\/|embed\/|live\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/
-  },
-  {
-    name: 'facebook', pattern: /(?:https?:\/\/)?(?:www\.|web\.|m\.)?facebook\.com\/(?:.*\/videos\/|watch\/?\?v=|reel\/|share\/r\/|share\/v\/)([0-9a-zA-Z_-]+)|(?:https?:\/\/)?fb\.watch\/([0-9a-zA-Z_-]+)/
-  },
-  {
-    name: 'instagram', pattern: /instagram\.com\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/
-  },
-  {
-    name: 'vimeo', pattern: /vimeo\.com\/(?:video\/)?(\d+)/
-  },
-  {
-    name: 'tiktok', pattern: /(?:tiktok\.com\/@[\w.]+\/video\/|vm\.tiktok\.com\/|vt\.tiktok\.com\/)([A-Za-z0-9]+)/
-  },
-  {
-    name: 'rumble', pattern: /rumble\.com\/(?:v|embed)\/([a-zA-Z0-9_-]+)/
-  },
-  {
-    name: 'loom', pattern: /loom\.com\/(?:share|embed)\/([a-zA-Z0-9]+)/
-  },
-  {
-    name: 'dropbox', pattern: /dropbox\.com\/s\/([a-zA-Z0-9]+)/
-  },
+  { name: 'youtube', pattern: /(?:youtube\.com\/(?:watch\?.*v=|shorts\/|embed\/|live\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/ },
+  { name: 'facebook', pattern: /(?:https?:\/\/)?(?:www\.|web\.|m\.)?facebook\.com\/(?:.*\/videos\/|watch\/?\?v=|reel\/|share\/r\/|share\/v\/)([0-9a-zA-Z_-]+)|(?:https?:\/\/)?fb\.watch\/([0-9a-zA-Z_-]+)/ },
+  { name: 'instagram', pattern: /instagram\.com\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/ },
+  { name: 'vimeo', pattern: /vimeo\.com\/(?:video\/)?(\d+)/ },
+  { name: 'tiktok', pattern: /(?:tiktok\.com\/@[\w.]+\/video\/|vm\.tiktok\.com\/|vt\.tiktok\.com\/)([A-Za-z0-9]+)/ },
+  { name: 'rumble', pattern: /rumble\.com\/(?:v|embed)\/([a-zA-Z0-9_-]+)/ },
+  { name: 'loom', pattern: /loom\.com\/(?:share|embed)\/([a-zA-Z0-9]+)/ },
+  { name: 'dropbox', pattern: /dropbox\.com\/s\/([a-zA-Z0-9]+)/ },
 ]
 
 const detectPlatform = (url) => {
@@ -60,8 +44,10 @@ router.post('/process', authenticateJWT, async (req, res) => {
     }
 
     // Validate URL format
-    try { new URL(video_url) } catch {
-      return res.status(400).json({ error: 'Please enter a valid video URL.' })
+    if (video_url) {
+      try { new URL(video_url) } catch {
+        return res.status(400).json({ error: 'Please enter a valid video URL.' })
+      }
     }
 
     // Detect platform
