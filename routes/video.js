@@ -48,7 +48,7 @@ const detectPlatform = (url) => {
 // POST /api/video/process
 router.post('/process', authenticateJWT, async (req, res) => {
   try {
-    const { video_url, style, start_seconds, end_seconds, video_info } = req.body
+    const { video_url, style, start_seconds, end_seconds, video_info, file_path, upload_id } = req.body
     const client = req.client
 
     // Validate inputs
@@ -127,7 +127,7 @@ router.post('/process', authenticateJWT, async (req, res) => {
       .from('videos')
       .insert({
         client_id: client.id,
-        youtube_url: video_url,
+        youtube_url: file_path || video_url,
         style,
         status: 'pending',
         title: video_info?.title || null,

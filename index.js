@@ -35,22 +35,6 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', service: 'ShortMint Backend', timestamp: new Date().toISOString() })
 })
 
-// const jwt = require('jsonwebtoken')
-
-// app.post('/api/debug/token', async (req, res) => {
-//   const { token } = req.body
-//   try {
-//     const decoded = jwt.decode(token)
-//     res.json({ 
-//       decoded,
-//       secret_length: process.env.SUPABASE_JWT_SECRET?.length,
-//       secret_first_10: process.env.SUPABASE_JWT_SECRET?.substring(0, 10)
-//     })
-//   } catch (e) {
-//     res.json({ error: e.message })
-//   }
-// })
-
 // Routes
 app.use('/api/auth', authRoutes)
 app.use('/api/video', videoRoutes)
