@@ -52,8 +52,8 @@ router.post('/process', authenticateJWT, async (req, res) => {
     const client = req.client
 
     // Validate inputs
-    if (!video_url) {
-      return res.status(400).json({ error: 'Please enter a video URL.' })
+    if (!video_url && !file_path) {
+      return res.status(400).json({ error: 'Please enter a video URL or upload a file.' })
     }
     if (!style || !['crop', 'blur', 'custom'].includes(style)) {
       return res.status(400).json({ error: 'Please select a valid style: crop, blur, or custom.' })
@@ -65,29 +65,29 @@ router.post('/process', authenticateJWT, async (req, res) => {
     }
 
     // Detect platform
-    const platform = detectPlatform(video_url)
-    if (!platform) {
-      return res.status(400).json({
-        error: 'This URL is not supported. Please use a YouTube, Facebook, Instagram, Vimeo, TikTok, Rumble, Loom, or Dropbox link.'
-      })
+    if (video_url) {
+      const platform = detectPlatform(video_url)
+      if (!platform) {
+        return res.status(400).json({
+          error: 'This URL is not supported. Please use a YouTube, Facebook, Instagram, Vimeo, TikTok, Rumble, Loom, or Dropbox link.'
+        })
+      }
+      const allowedPlatforms = PLATFORM_TIERS[client.plan] || PLATFORM_TIERS['trial']
+      if (!allowedPlatforms.includes(platform)) {
+        const planNeeded = Object.entries(PLATFORM_TIERS).find(([, platforms]) =>
+          platforms.includes(platform)
+        )?.[0]
+        return res.status(403).json({
+          error: `${platform.charAt(0).toUpperCase() + platform.slice(1)} is not available on your ${client.plan} plan. Upgrade to ${planNeeded || 'a higher plan'}.`,
+          upgrade_required: true
+        })
+      }
     }
 
     // Check plan is active
     if (client.plan === 'cancelled') {
       return res.status(403).json({
         error: 'Your account is inactive. Please contact support at hello@addmora.com.'
-      })
-    }
-
-    // Check platform access
-    const allowedPlatforms = PLATFORM_TIERS[client.plan] || PLATFORM_TIERS['trial']
-    if (!allowedPlatforms.includes(platform)) {
-      const planNeeded = Object.entries(PLATFORM_TIERS).find(([, platforms]) =>
-        platforms.includes(platform)
-      )?.[0]
-      return res.status(403).json({
-        error: `${platform.charAt(0).toUpperCase() + platform.slice(1)} is not available on your ${client.plan} plan. Upgrade to ${planNeeded || 'a higher plan'} to use this platform.`,
-        upgrade_required: true
       })
     }
 
@@ -127,7 +127,7 @@ router.post('/process', authenticateJWT, async (req, res) => {
       .from('videos')
       .insert({
         client_id: client.id,
-        youtube_url: file_path || video_url,
+        youtube_url: video_url || file_path,
         style,
         status: 'pending',
         title: video_info?.title || null,
@@ -143,7 +143,7 @@ router.post('/process', authenticateJWT, async (req, res) => {
     }
 
     // Fire n8n webhook without waiting
-    processVideo(video_url, client.id, style, video.id, start_seconds, end_seconds, video_info).catch((err) => {
+    processVideo(video_url, client.id, style, video.id, start_seconds, end_seconds, video_info, file_path).catch((err) => {
       console.log('n8n connection closed (expected):', err.message)
     })
 
