@@ -171,6 +171,7 @@ router.post(
             usage_hours_used: 0,
             stripe_subscription_id: null,
             plan_expires_at: null,
+            subscription_cancel_at_period_end: false,
           })
           .eq("id", client.id);
 
@@ -206,6 +207,13 @@ router.post("/cancel", authenticateJWT, async (req, res) => {
     await stripe.subscriptions.update(client.stripe_subscription_id, {
       cancel_at_period_end: true,
     });
+
+    await supabase
+      .from("clients")
+      .update({
+        subscription_cancel_at_period_end: true,
+      })
+      .eq("id", client.id);
 
     return res.json({
       success: true,
