@@ -103,16 +103,20 @@ router.post(
 
       const now = new Date();
 
+      // Fetch current client to calculate remaining hours
+      const { data: currentClient } = await supabase
+        .from("clients")
+        .select("usage_hours_limit, usage_hours_used")
+        .eq("id", clientId)
+        .single();
+
+      const currentLimit = parseFloat(currentClient?.usage_hours_limit || 0);
+      const currentUsed = parseFloat(currentClient?.usage_hours_used || 0);
+      const remainingHours = Math.max(currentLimit - currentUsed, 0);
+
       if (paymentType === "payment") {
         // One-time — ADD hours to existing balance
-        const { data: currentClient } = await supabase
-          .from("clients")
-          .select("usage_hours_limit")
-          .eq("id", clientId)
-          .single();
-
-        const currentLimit = parseFloat(currentClient?.usage_hours_limit || 0);
-        const newLimit = currentLimit + planDetails.hours;
+        const newLimit = remainingHours + planDetails.hours;
 
         await supabase
           .from("clients")
@@ -127,6 +131,7 @@ router.post(
           .eq("id", clientId);
       } else {
         // Subscription — RESET hours
+        const newLimit = remainingHours + planDetails.hours;
         const expiresAt = new Date(now);
         expiresAt.setMonth(expiresAt.getMonth() + 1);
 
@@ -135,7 +140,7 @@ router.post(
           .update({
             plan: planDetails.plan,
             plan_type: "subscription",
-            usage_hours_limit: planDetails.hours,
+            usage_hours_limit: newLimit,
             usage_hours_used: 0,
             plan_started_at: now.toISOString(),
             plan_expires_at: expiresAt.toISOString(),
