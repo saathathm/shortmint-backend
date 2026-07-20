@@ -103,19 +103,17 @@ router.post(
 
       const now = new Date();
 
-      // Fetch current client to calculate remaining hours
-      const { data: currentClient } = await supabase
-        .from("clients")
-        .select("usage_hours_limit, usage_hours_used")
-        .eq("id", clientId)
-        .single();
-
-      const currentLimit = parseFloat(currentClient?.usage_hours_limit || 0);
-      const currentUsed = parseFloat(currentClient?.usage_hours_used || 0);
-      const remainingHours = Math.max(currentLimit - currentUsed, 0);
-
       if (paymentType === "payment") {
-        // One-time — ADD hours to existing balance
+        // One-time — fetch remaining hours and ADD to new plan hours
+        const { data: currentClient } = await supabase
+          .from("clients")
+          .select("usage_hours_limit, usage_hours_used")
+          .eq("id", clientId)
+          .single();
+
+        const currentLimit = parseFloat(currentClient?.usage_hours_limit || 0);
+        const currentUsed = parseFloat(currentClient?.usage_hours_used || 0);
+        const remainingHours = Math.max(currentLimit - currentUsed, 0);
         const newLimit = remainingHours + planDetails.hours;
 
         await supabase
@@ -129,9 +127,12 @@ router.post(
             stripe_subscription_id: null,
           })
           .eq("id", clientId);
+
+        console.log(
+          `One-time purchase for ${clientId}: ${planDetails.plan} — ${planDetails.hours}hrs + ${remainingHours.toFixed(2)}hrs remaining = ${newLimit.toFixed(2)}hrs total`,
+        );
       } else {
-        // Subscription — RESET hours
-        const newLimit = remainingHours + planDetails.hours;
+        // Subscription — clean reset, Stripe handles monetary proration
         const expiresAt = new Date(now);
         expiresAt.setMonth(expiresAt.getMonth() + 1);
 
@@ -140,22 +141,23 @@ router.post(
           .update({
             plan: planDetails.plan,
             plan_type: "subscription",
-            usage_hours_limit: newLimit,
+            usage_hours_limit: planDetails.hours,
             usage_hours_used: 0,
             plan_started_at: now.toISOString(),
             plan_expires_at: expiresAt.toISOString(),
             stripe_subscription_id: session.subscription,
             stripe_customer_id: session.customer,
+            subscription_cancel_at_period_end: false,
           })
           .eq("id", clientId);
-      }
 
-      console.log(
-        `Plan updated for ${clientId}: ${planDetails.plan} (${paymentType})`,
-      );
+        console.log(
+          `Subscription for ${clientId}: ${planDetails.plan} — clean ${planDetails.hours}hrs, Stripe handles proration`,
+        );
+      }
     }
 
-    // Subscription cancelled
+    // Subscription cancelled at period end — fully deleted
     if (event.type === "customer.subscription.deleted") {
       const subscription = event.data.object;
       const customerId = subscription.customer;
@@ -181,12 +183,12 @@ router.post(
           .eq("id", client.id);
 
         console.log(
-          `Subscription cancelled — client ${client.id} downgraded to trial`,
+          `Subscription deleted — client ${client.id} downgraded to trial`,
         );
       }
     }
 
-    // Subscription cancel_at_period_end set
+    // Subscription updated
     if (event.type === "customer.subscription.updated") {
       const subscription = event.data.object;
       if (subscription.cancel_at_period_end) {
