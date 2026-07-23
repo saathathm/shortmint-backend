@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const supabase = require("../lib/supabase");
 const { authenticateJWT } = require("../middleware/auth");
+const { sendMail } = require("../lib/mailer");
 
 // Sign up with email + password
 router.post("/signup", async (req, res) => {
@@ -49,6 +50,32 @@ router.post("/signup", async (req, res) => {
       .select("*")
       .eq("id", data.user.id)
       .single();
+
+    // Send welcome email — fire and forget
+    sendMail({
+      to: email,
+      subject: "Welcome to ShortMint 🎬",
+      html: `
+    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
+      <h1 style="color: #4F46E5; font-size: 24px; margin-bottom: 8px;">Welcome to ShortMint, ${name}!</h1>
+      <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
+        You're all set. Start turning your long videos into viral Shorts in minutes.
+      </p>
+      <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
+        Your free trial includes <strong>15 minutes</strong> of processing — enough to try it out with a real video.
+      </p>
+      <a href="https://shortmint.addmora.com/dashboard"
+        style="display: inline-block; margin-top: 24px; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
+        Create your first Shorts →
+      </a>
+      <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
+      <p style="color: #9CA3AF; font-size: 13px;">
+        Questions? Just reply to this email or use the chat on our site.<br/>
+        — The ShortMint team
+      </p>
+    </div>
+  `,
+    }).catch((err) => console.error("Welcome email error:", err.message));
 
     return res.json({
       access_token: session.session.access_token,

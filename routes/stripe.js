@@ -3,6 +3,7 @@ const router = express.Router();
 const Stripe = require("stripe");
 const supabase = require("../lib/supabase");
 const { authenticateJWT } = require("../middleware/auth");
+const { sendMail } = require("../lib/mailer");
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -128,6 +129,48 @@ router.post(
           })
           .eq("id", clientId);
 
+        // Send payment confirmation email — fire and forget
+        const { data: clientData } = await supabase
+          .from("clients")
+          .select("name, email")
+          .eq("id", clientId)
+          .single();
+
+        if (clientData) {
+          const planName =
+            planDetails.plan.charAt(0).toUpperCase() +
+            planDetails.plan.slice(1);
+          const isOneTime = paymentType === "payment";
+
+          sendMail({
+            to: clientData.email,
+            subject: `You're on ShortMint ${planName} 🎉`,
+            html: `
+      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
+        <h1 style="color: #4F46E5; font-size: 24px; margin-bottom: 8px;">Payment confirmed!</h1>
+        <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
+          Hi ${clientData.name}, your <strong>${planName}</strong> plan is now active.
+        </p>
+        <div style="background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; padding: 20px; margin: 24px 0;">
+          <p style="margin: 0 0 8px 0; color: #111827; font-weight: 600;">Plan summary</p>
+          <p style="margin: 0; color: #6B7280; font-size: 14px;">Plan: <strong>${planName}</strong></p>
+          <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Hours: <strong>${planDetails.hours} hours</strong></p>
+          <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Type: <strong>${isOneTime ? "One-time purchase — hours never expire" : "Monthly subscription — renews automatically"}</strong></p>
+        </div>
+        <a href="https://shortmint.addmora.com/dashboard"
+          style="display: inline-block; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
+          Start creating →
+        </a>
+        <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
+        <p style="color: #9CA3AF; font-size: 13px;">
+          Need help or have a payment issue? Reply to this email or chat with us at shortmint.addmora.com.<br/>
+          — The ShortMint team
+        </p>
+      </div>
+    `,
+          }).catch((err) => console.error("Payment email error:", err.message));
+        }
+
         console.log(
           `One-time purchase for ${clientId}: ${planDetails.plan} — ${planDetails.hours}hrs + ${remainingHours.toFixed(2)}hrs remaining = ${newLimit.toFixed(2)}hrs total`,
         );
@@ -150,6 +193,48 @@ router.post(
             subscription_cancel_at_period_end: false,
           })
           .eq("id", clientId);
+
+        // Send payment confirmation email — fire and forget
+        const { data: clientData } = await supabase
+          .from("clients")
+          .select("name, email")
+          .eq("id", clientId)
+          .single();
+
+        if (clientData) {
+          const planName =
+            planDetails.plan.charAt(0).toUpperCase() +
+            planDetails.plan.slice(1);
+          const isOneTime = paymentType === "payment";
+
+          sendMail({
+            to: clientData.email,
+            subject: `You're on ShortMint ${planName} 🎉`,
+            html: `
+      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
+        <h1 style="color: #4F46E5; font-size: 24px; margin-bottom: 8px;">Payment confirmed!</h1>
+        <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
+          Hi ${clientData.name}, your <strong>${planName}</strong> plan is now active.
+        </p>
+        <div style="background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; padding: 20px; margin: 24px 0;">
+          <p style="margin: 0 0 8px 0; color: #111827; font-weight: 600;">Plan summary</p>
+          <p style="margin: 0; color: #6B7280; font-size: 14px;">Plan: <strong>${planName}</strong></p>
+          <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Hours: <strong>${planDetails.hours} hours</strong></p>
+          <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Type: <strong>${isOneTime ? "One-time purchase — hours never expire" : "Monthly subscription — renews automatically"}</strong></p>
+        </div>
+        <a href="https://shortmint.addmora.com/dashboard"
+          style="display: inline-block; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
+          Start creating →
+        </a>
+        <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
+        <p style="color: #9CA3AF; font-size: 13px;">
+          Need help or have a payment issue? Reply to this email or chat with us at shortmint.addmora.com.<br/>
+          — The ShortMint team
+        </p>
+      </div>
+    `,
+          }).catch((err) => console.error("Payment email error:", err.message));
+        }
 
         console.log(
           `Subscription for ${clientId}: ${planDetails.plan} — clean ${planDetails.hours}hrs, Stripe handles proration`,
