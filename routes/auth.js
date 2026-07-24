@@ -193,4 +193,23 @@ router.patch("/profile", authenticateJWT, async (req, res) => {
   }
 });
 
+router.post("/check-provider", async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: "Email required" });
+
+    const { data, error } = await supabase.auth.admin.getUserByEmail(email);
+
+    if (error || !data?.user) {
+      // Don't reveal if user exists — return same response
+      return res.json({ provider: "email" });
+    }
+
+    const provider = data.user.app_metadata?.provider || "email";
+    return res.json({ provider });
+  } catch (err) {
+    return res.json({ provider: "email" });
+  }
+});
+
 module.exports = router;
