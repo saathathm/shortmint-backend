@@ -201,13 +201,18 @@ router.post("/check-provider", async (req, res) => {
     const { data, error } = await supabase.auth.admin.getUserByEmail(email);
 
     if (error || !data?.user) {
-      // Don't reveal if user exists — return same response
       return res.json({ provider: "email" });
     }
 
-    const provider = data.user.app_metadata?.provider || "email";
+    const user = data.user;
+
+    // Check app_metadata first
+    const provider =
+      user.app_metadata?.provider || user.identities?.[0]?.provider || "email";
+
     return res.json({ provider });
   } catch (err) {
+    console.error("Check provider error:", err.message);
     return res.json({ provider: "email" });
   }
 });
