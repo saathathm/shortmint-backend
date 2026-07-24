@@ -8,6 +8,8 @@ const uploadRoutes = require('./routes/upload')
 const clipsRoutes = require('./routes/clips')
 const stripeRoutes = require('./routes/stripe')
 const settingsRoutes = require('./routes/settings')
+const leadsRoutes = require('./routes/leads')
+const feedbackRoutes = require('./routes/feedback')
 
 const app = express()
 const PORT = process.env.PORT || 3001
@@ -42,6 +44,8 @@ app.use('/api/upload', uploadRoutes)
 app.use('/api/clips', clipsRoutes)
 app.use('/api/stripe', stripeRoutes)
 app.use('/api/settings', settingsRoutes)
+app.use('/api/leads', leadsRoutes)
+app.use('/api/feedback', feedbackRoutes)
 
 // 404 handler
 app.use((req, res) => {
