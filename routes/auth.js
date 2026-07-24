@@ -198,23 +198,20 @@ router.post("/check-provider", async (req, res) => {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: "Email required" });
 
-    const { data, error } = await supabase.auth.admin.getUserByEmail(email);
+    const { data, error } = await supabase
+      .from("auth.users")
+      .select("raw_app_meta_data")
+      .eq("email", email)
+      .single();
 
-    if (error || !data?.user) {
+    if (error || !data) {
       return res.json({ provider: "email" });
     }
 
-    const user = data.user;
+    const appMeta = data.raw_app_meta_data;
+    const provider = appMeta?.provider || "email";
 
-    console.log('User app_metadata:', user.app_metadata)
-    console.log('User identities:', user.identities)
-
-    // Check app_metadata first
-    const provider =
-      user.app_metadata?.provider || user.identities?.[0]?.provider || "email";
-
-    console.log('Provider detected:', provider)
-
+    console.log("Provider detected:", provider);
     return res.json({ provider });
   } catch (err) {
     console.error("Check provider error:", err.message);
