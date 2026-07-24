@@ -206,9 +206,14 @@ router.post("/check-provider", async (req, res) => {
 
     const user = data.user;
 
+    console.log('User app_metadata:', user.app_metadata)
+    console.log('User identities:', user.identities)
+
     // Check app_metadata first
     const provider =
       user.app_metadata?.provider || user.identities?.[0]?.provider || "email";
+
+    console.log('Provider detected:', provider)
 
     return res.json({ provider });
   } catch (err) {
