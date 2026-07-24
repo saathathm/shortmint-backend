@@ -120,9 +120,16 @@ router.post("/login", async (req, res) => {
   }
 });
 
-// Get current user + client data
+// Get current user + client data — includes app_metadata for provider check
 router.get("/me", authenticateJWT, async (req, res) => {
-  return res.json({ user: req.user, client: req.client });
+  return res.json({
+    user: {
+      id: req.user.id,
+      email: req.user.email,
+      app_metadata: req.user.app_metadata,
+    },
+    client: req.client,
+  });
 });
 
 // Refresh client data (after plan upgrade etc.)
@@ -190,32 +197,6 @@ router.patch("/profile", authenticateJWT, async (req, res) => {
     return res.json({ success: true });
   } catch (err) {
     return res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-router.post("/check-provider", async (req, res) => {
-  try {
-    const { email } = req.body;
-    if (!email) return res.status(400).json({ error: "Email required" });
-
-    const { data, error } = await supabase
-      .from("auth.users")
-      .select("raw_app_meta_data")
-      .eq("email", email)
-      .single();
-
-    if (error || !data) {
-      return res.json({ provider: "email" });
-    }
-
-    const appMeta = data.raw_app_meta_data;
-    const provider = appMeta?.provider || "email";
-
-    console.log("Provider detected:", provider);
-    return res.json({ provider });
-  } catch (err) {
-    console.error("Check provider error:", err.message);
-    return res.json({ provider: "email" });
   }
 });
 

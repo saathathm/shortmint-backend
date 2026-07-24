@@ -75,12 +75,12 @@ const authenticateJWT = async (req, res, next) => {
           .json({ error: "Could not create client record" });
       }
 
-      req.user = { id: userId, email: decoded.email };
+      req.user = { id: userId, email: decoded.email, app_metadata: decoded.app_metadata || {} };
       req.client = newClient;
       return next();
     }
 
-    req.user = { id: userId, email: decoded.email };
+    req.user = { id: userId, email: decoded.email, app_metadata: decoded.app_metadata || {} };
     req.client = client;
     next();
   } catch (err) {
