@@ -48,15 +48,21 @@ router.post("/", authenticateJWT, async (req, res) => {
 
 router.get("/:videoId", authenticateJWT, async (req, res) => {
   try {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("feedback")
       .select("id")
       .eq("client_id", req.client.id)
       .eq("video_id", req.params.videoId)
-      .single();
+      .maybeSingle();
+
+    if (error) {
+      console.error("Feedback check error:", error.message);
+      return res.json({ exists: false });
+    }
 
     return res.json({ exists: !!data });
   } catch (err) {
+    console.error("Feedback check error:", err.message);
     return res.json({ exists: false });
   }
 });
