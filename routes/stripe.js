@@ -36,6 +36,55 @@ const PLAN_MAP = {
   price_1TuQScHTjUJCdbgvYhlKeJqN: { plan: "pro", hours: 60, type: "one_time" },
 };
 
+// Helper — save payment record
+const savePayment = async (data) => {
+  const { error } = await supabase.from("payments").insert(data);
+  if (error) console.error("Failed to save payment record:", error.message);
+};
+
+// Helper — send payment confirmation email
+const sendPaymentEmail = async (clientId, planDetails, paymentType) => {
+  const { data: clientData } = await supabase
+    .from("clients")
+    .select("name, email")
+    .eq("id", clientId)
+    .single();
+
+  if (!clientData) return;
+
+  const planName =
+    planDetails.plan.charAt(0).toUpperCase() + planDetails.plan.slice(1);
+  const isOneTime = paymentType === "payment";
+
+  sendMail({
+    to: clientData.email,
+    subject: `You're on ShortMint ${planName} 🎉`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
+        <h1 style="color: #4F46E5; font-size: 24px; margin-bottom: 8px;">Payment confirmed!</h1>
+        <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
+          Hi ${clientData.name}, your <strong>${planName}</strong> plan is now active.
+        </p>
+        <div style="background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; padding: 20px; margin: 24px 0;">
+          <p style="margin: 0 0 8px 0; color: #111827; font-weight: 600;">Plan summary</p>
+          <p style="margin: 0; color: #6B7280; font-size: 14px;">Plan: <strong>${planName}</strong></p>
+          <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Hours: <strong>${planDetails.hours} hours</strong></p>
+          <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Type: <strong>${isOneTime ? "One-time purchase — hours never expire" : "Monthly subscription — renews automatically"}</strong></p>
+        </div>
+        <a href="https://shortmint.addmora.com/dashboard"
+          style="display: inline-block; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
+          Start creating →
+        </a>
+        <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
+        <p style="color: #9CA3AF; font-size: 13px;">
+          Need help or have a payment issue? Reply to this email or chat with us at shortmint.addmora.com.<br/>
+          — The ShortMint team
+        </p>
+      </div>
+    `,
+  }).catch((err) => console.error("Payment email error:", err.message));
+};
+
 // POST /api/stripe/checkout
 router.post("/checkout", authenticateJWT, async (req, res) => {
   try {
@@ -90,13 +139,14 @@ router.post(
         .json({ error: "Webhook signature verification failed" });
     }
 
+    // ✅ checkout.session.completed
     if (event.type === "checkout.session.completed") {
       const session = event.data.object;
       const clientId = session.client_reference_id;
       const priceId = session.metadata?.price_id;
       const paymentType = session.metadata?.payment_type;
-
       const planDetails = PLAN_MAP[priceId];
+
       if (!planDetails) {
         console.error("Unknown price_id:", priceId);
         return res.json({ received: true });
@@ -105,7 +155,7 @@ router.post(
       const now = new Date();
 
       if (paymentType === "payment") {
-        // One-time — fetch remaining hours and ADD to new plan hours
+        // One-time — ADD remaining hours to new plan
         const { data: currentClient } = await supabase
           .from("clients")
           .select("usage_hours_limit, usage_hours_used")
@@ -122,6 +172,7 @@ router.post(
           .update({
             plan: planDetails.plan,
             plan_type: "one_time",
+            subscription_status: "inactive",
             usage_hours_limit: newLimit,
             plan_started_at: now.toISOString(),
             plan_expires_at: null,
@@ -129,121 +180,226 @@ router.post(
           })
           .eq("id", clientId);
 
-        // Send payment confirmation email — fire and forget
-        const { data: clientData } = await supabase
-          .from("clients")
-          .select("name, email")
-          .eq("id", clientId)
-          .single();
+        // Save payment record
+        await savePayment({
+          client_id: clientId,
+          stripe_session_id: session.id,
+          stripe_payment_intent_id: session.payment_intent,
+          stripe_customer_id: session.customer,
+          amount: session.amount_total,
+          currency: session.currency,
+          status: "paid",
+          plan: planDetails.plan,
+          plan_type: "one_time",
+          hours_granted: planDetails.hours,
+          event_type: "checkout.session.completed",
+        });
 
-        if (clientData) {
-          const planName =
-            planDetails.plan.charAt(0).toUpperCase() +
-            planDetails.plan.slice(1);
-          const isOneTime = paymentType === "payment";
-
-          sendMail({
-            to: clientData.email,
-            subject: `You're on ShortMint ${planName} 🎉`,
-            html: `
-      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
-        <h1 style="color: #4F46E5; font-size: 24px; margin-bottom: 8px;">Payment confirmed!</h1>
-        <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
-          Hi ${clientData.name}, your <strong>${planName}</strong> plan is now active.
-        </p>
-        <div style="background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; padding: 20px; margin: 24px 0;">
-          <p style="margin: 0 0 8px 0; color: #111827; font-weight: 600;">Plan summary</p>
-          <p style="margin: 0; color: #6B7280; font-size: 14px;">Plan: <strong>${planName}</strong></p>
-          <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Hours: <strong>${planDetails.hours} hours</strong></p>
-          <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Type: <strong>${isOneTime ? "One-time purchase — hours never expire" : "Monthly subscription — renews automatically"}</strong></p>
-        </div>
-        <a href="https://shortmint.addmora.com/dashboard"
-          style="display: inline-block; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
-          Start creating →
-        </a>
-        <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
-        <p style="color: #9CA3AF; font-size: 13px;">
-          Need help or have a payment issue? Reply to this email or chat with us at shortmint.addmora.com.<br/>
-          — The ShortMint team
-        </p>
-      </div>
-    `,
-          }).catch((err) => console.error("Payment email error:", err.message));
-        }
-
+        await sendPaymentEmail(clientId, planDetails, paymentType);
         console.log(
-          `One-time purchase for ${clientId}: ${planDetails.plan} — ${planDetails.hours}hrs + ${remainingHours.toFixed(2)}hrs remaining = ${newLimit.toFixed(2)}hrs total`,
+          `One-time: ${clientId} — ${planDetails.plan} — ${newLimit.toFixed(2)}hrs total`,
         );
       } else {
-        // Subscription — clean reset, Stripe handles monetary proration
-        const expiresAt = new Date(now);
-        expiresAt.setMonth(expiresAt.getMonth() + 1);
+        // Subscription — clean reset
+        const stripeSubscription = await stripe.subscriptions.retrieve(
+          session.subscription,
+        );
+        const periodStart = new Date(
+          stripeSubscription.current_period_start * 1000,
+        );
+        const periodEnd = new Date(
+          stripeSubscription.current_period_end * 1000,
+        );
 
         await supabase
           .from("clients")
           .update({
             plan: planDetails.plan,
             plan_type: "subscription",
+            subscription_status: "active",
             usage_hours_limit: planDetails.hours,
             usage_hours_used: 0,
             plan_started_at: now.toISOString(),
-            plan_expires_at: expiresAt.toISOString(),
+            plan_expires_at: periodEnd.toISOString(),
+            current_period_start: periodStart.toISOString(),
+            current_period_end: periodEnd.toISOString(),
             stripe_subscription_id: session.subscription,
             stripe_customer_id: session.customer,
             subscription_cancel_at_period_end: false,
           })
           .eq("id", clientId);
 
-        // Send payment confirmation email — fire and forget
-        const { data: clientData } = await supabase
-          .from("clients")
-          .select("name, email")
-          .eq("id", clientId)
-          .single();
+        // Save payment record
+        await savePayment({
+          client_id: clientId,
+          stripe_session_id: session.id,
+          stripe_subscription_id: session.subscription,
+          stripe_customer_id: session.customer,
+          amount: session.amount_total,
+          currency: session.currency,
+          status: "paid",
+          plan: planDetails.plan,
+          plan_type: "subscription",
+          hours_granted: planDetails.hours,
+          event_type: "checkout.session.completed",
+        });
 
-        if (clientData) {
-          const planName =
-            planDetails.plan.charAt(0).toUpperCase() +
-            planDetails.plan.slice(1);
-          const isOneTime = paymentType === "payment";
-
-          sendMail({
-            to: clientData.email,
-            subject: `You're on ShortMint ${planName} 🎉`,
-            html: `
-      <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
-        <h1 style="color: #4F46E5; font-size: 24px; margin-bottom: 8px;">Payment confirmed!</h1>
-        <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
-          Hi ${clientData.name}, your <strong>${planName}</strong> plan is now active.
-        </p>
-        <div style="background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; padding: 20px; margin: 24px 0;">
-          <p style="margin: 0 0 8px 0; color: #111827; font-weight: 600;">Plan summary</p>
-          <p style="margin: 0; color: #6B7280; font-size: 14px;">Plan: <strong>${planName}</strong></p>
-          <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Hours: <strong>${planDetails.hours} hours</strong></p>
-          <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Type: <strong>${isOneTime ? "One-time purchase — hours never expire" : "Monthly subscription — renews automatically"}</strong></p>
-        </div>
-        <a href="https://shortmint.addmora.com/dashboard"
-          style="display: inline-block; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
-          Start creating →
-        </a>
-        <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
-        <p style="color: #9CA3AF; font-size: 13px;">
-          Need help or have a payment issue? Reply to this email or chat with us at shortmint.addmora.com.<br/>
-          — The ShortMint team
-        </p>
-      </div>
-    `,
-          }).catch((err) => console.error("Payment email error:", err.message));
-        }
-
+        await sendPaymentEmail(clientId, planDetails, paymentType);
         console.log(
-          `Subscription for ${clientId}: ${planDetails.plan} — clean ${planDetails.hours}hrs, Stripe handles proration`,
+          `Subscription: ${clientId} — ${planDetails.plan} — ${planDetails.hours}hrs`,
         );
       }
     }
 
-    // Subscription cancelled at period end — fully deleted
-    if (event.type === "customer.subscription.deleted") {
+    // ✅ invoice.paid — monthly renewal
+    if (event.type === "invoice.paid") {
+      const invoice = event.data.object;
+      if (invoice.billing_reason !== "subscription_cycle")
+        return res.json({ received: true });
+
+      const customerId = invoice.customer;
+      const subscriptionId = invoice.subscription;
+
+      const { data: client } = await supabase
+        .from("clients")
+        .select("id, plan, plan_type")
+        .eq("stripe_customer_id", customerId)
+        .single();
+
+      if (!client) return res.json({ received: true });
+
+      // Get subscription details for period dates
+      const stripeSubscription =
+        await stripe.subscriptions.retrieve(subscriptionId);
+      const periodStart = new Date(
+        stripeSubscription.current_period_start * 1000,
+      );
+      const periodEnd = new Date(stripeSubscription.current_period_end * 1000);
+
+      // Get plan details from subscription items
+      const priceId = stripeSubscription.items.data[0]?.price?.id;
+      const planDetails = PLAN_MAP[priceId];
+
+      if (!planDetails) return res.json({ received: true });
+
+      // Reset hours for new billing cycle
+      await supabase
+        .from("clients")
+        .update({
+          usage_hours_used: 0,
+          usage_hours_limit: planDetails.hours,
+          subscription_status: "active",
+          plan_expires_at: periodEnd.toISOString(),
+          current_period_start: periodStart.toISOString(),
+          current_period_end: periodEnd.toISOString(),
+          subscription_cancel_at_period_end: false,
+        })
+        .eq("id", client.id);
+
+      // Save payment record
+      await savePayment({
+        client_id: client.id,
+        stripe_invoice_id: invoice.id,
+        stripe_subscription_id: subscriptionId,
+        stripe_customer_id: customerId,
+        amount: invoice.amount_paid,
+        currency: invoice.currency,
+        status: "paid",
+        plan: planDetails.plan,
+        plan_type: "subscription",
+        hours_granted: planDetails.hours,
+        event_type: "invoice.paid",
+      });
+
+      console.log(
+        `Renewal: ${client.id} — ${planDetails.plan} — hours reset to ${planDetails.hours}`,
+      );
+    }
+
+    // ✅ invoice.payment_failed
+    if (event.type === "invoice.payment_failed") {
+      const invoice = event.data.object;
+      const customerId = invoice.customer;
+
+      const { data: client } = await supabase
+        .from("clients")
+        .select("id, name, email")
+        .eq("stripe_customer_id", customerId)
+        .single();
+
+      if (!client) return res.json({ received: true });
+
+      // Mark as past_due
+      await supabase
+        .from("clients")
+        .update({
+          subscription_status: "past_due",
+        })
+        .eq("id", client.id);
+
+      // Save failed payment record
+      await savePayment({
+        client_id: client.id,
+        stripe_invoice_id: invoice.id,
+        stripe_customer_id: customerId,
+        amount: invoice.amount_due,
+        currency: invoice.currency,
+        status: "failed",
+        plan_type: "subscription",
+        event_type: "invoice.payment_failed",
+        failure_reason: invoice.last_payment_error?.message || "Payment failed",
+      });
+
+      // Notify user
+      sendMail({
+        to: client.email,
+        subject: "Action needed — ShortMint payment failed",
+        html: `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
+            <h1 style="color: #EF4444; font-size: 22px; margin-bottom: 8px;">Payment failed</h1>
+            <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
+              Hi ${client.name}, we couldn't process your payment for ShortMint.
+            </p>
+            <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
+              Please update your payment method to keep your account active.
+              Stripe will retry automatically over the next few days.
+            </p>
+            <a href="https://shortmint.addmora.com/settings"
+              style="display: inline-block; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
+              Update payment method →
+            </a>
+            <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
+            <p style="color: #9CA3AF; font-size: 13px;">
+              Need help? Reply to this email or chat with us at shortmint.addmora.com.<br/>
+              — The ShortMint team
+            </p>
+          </div>
+        `,
+      }).catch((err) =>
+        console.error("Payment failed email error:", err.message),
+      );
+
+      // Notify you
+      sendMail({
+        to: "saadhath@addmora.com",
+        subject: `⚠️ Payment failed — ${client.email}`,
+        html: `
+          <div style="font-family: sans-serif; padding: 24px;">
+            <h2 style="color: #EF4444;">Payment Failed</h2>
+            <p><strong>User:</strong> ${client.name} (${client.email})</p>
+            <p><strong>Amount:</strong> $${(invoice.amount_due / 100).toFixed(2)}</p>
+            <p><strong>Reason:</strong> ${invoice.last_payment_error?.message || "Unknown"}</p>
+          </div>
+        `,
+      }).catch((err) =>
+        console.error("Admin payment failed email error:", err.message),
+      );
+
+      console.log(`Payment failed: ${client.id} — marked past_due`);
+    }
+
+    // ✅ customer.subscription.updated
+    if (event.type === "customer.subscription.updated") {
       const subscription = event.data.object;
       const customerId = subscription.customer;
 
@@ -253,33 +409,83 @@ router.post(
         .eq("stripe_customer_id", customerId)
         .single();
 
+      if (!client) return res.json({ received: true });
+
+      const periodEnd = new Date(subscription.current_period_end * 1000);
+      const periodStart = new Date(subscription.current_period_start * 1000);
+
+      await supabase
+        .from("clients")
+        .update({
+          subscription_cancel_at_period_end: subscription.cancel_at_period_end,
+          current_period_start: periodStart.toISOString(),
+          current_period_end: periodEnd.toISOString(),
+          plan_expires_at: periodEnd.toISOString(),
+          subscription_status: subscription.status,
+        })
+        .eq("id", client.id);
+
+      console.log(
+        `Subscription updated: ${client.id} — status: ${subscription.status}`,
+      );
+    }
+
+    // ✅ customer.subscription.deleted
+    if (event.type === "customer.subscription.deleted") {
+      const subscription = event.data.object;
+      const customerId = subscription.customer;
+
+      const { data: client } = await supabase
+        .from("clients")
+        .select("id, name, email")
+        .eq("stripe_customer_id", customerId)
+        .single();
+
       if (client) {
         await supabase
           .from("clients")
           .update({
             plan: "trial",
             plan_type: "one_time",
+            subscription_status: "inactive",
             usage_hours_limit: 0.25,
             usage_hours_used: 0,
             stripe_subscription_id: null,
             plan_expires_at: null,
+            current_period_start: null,
+            current_period_end: null,
             subscription_cancel_at_period_end: false,
           })
           .eq("id", client.id);
 
-        console.log(
-          `Subscription deleted — client ${client.id} downgraded to trial`,
+        // Notify user
+        sendMail({
+          to: client.email,
+          subject: "Your ShortMint subscription has ended",
+          html: `
+            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
+              <h1 style="color: #4F46E5; font-size: 22px; margin-bottom: 8px;">Subscription ended</h1>
+              <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
+                Hi ${client.name}, your ShortMint subscription has ended and your account has been moved to the free trial.
+              </p>
+              <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
+                We'd love to have you back. You can resubscribe anytime.
+              </p>
+              <a href="https://shortmint.addmora.com/pricing"
+                style="display: inline-block; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
+                View plans →
+              </a>
+              <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
+              <p style="color: #9CA3AF; font-size: 13px;">
+                — The ShortMint team
+              </p>
+            </div>
+          `,
+        }).catch((err) =>
+          console.error("Cancellation email error:", err.message),
         );
-      }
-    }
 
-    // Subscription updated
-    if (event.type === "customer.subscription.updated") {
-      const subscription = event.data.object;
-      if (subscription.cancel_at_period_end) {
-        console.log(
-          `Subscription will cancel at period end: ${subscription.id}`,
-        );
+        console.log(`Subscription deleted — ${client.id} downgraded to trial`);
       }
     }
 
