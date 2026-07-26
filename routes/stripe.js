@@ -36,26 +36,34 @@ const PLAN_MAP = {
   price_1TuQScHTjUJCdbgvYhlKeJqN: { plan: "pro", hours: 60, type: "one_time" },
 };
 
-// Helper — save payment record
+const mapSubscriptionStatus = (stripeStatus) => {
+  const statusMap = {
+    active: "active",
+    past_due: "past_due",
+    canceled: "inactive",
+    incomplete: "past_due",
+    incomplete_expired: "inactive",
+    trialing: "active",
+    unpaid: "past_due",
+  };
+  return statusMap[stripeStatus] || "inactive";
+};
+
 const savePayment = async (data) => {
   const { error } = await supabase.from("payments").insert(data);
   if (error) console.error("Failed to save payment record:", error.message);
 };
 
-// Helper — send payment confirmation email
 const sendPaymentEmail = async (clientId, planDetails, paymentType) => {
   const { data: clientData } = await supabase
     .from("clients")
     .select("name, email")
     .eq("id", clientId)
     .single();
-
   if (!clientData) return;
-
   const planName =
     planDetails.plan.charAt(0).toUpperCase() + planDetails.plan.slice(1);
   const isOneTime = paymentType === "payment";
-
   sendMail({
     to: clientData.email,
     subject: `You're on ShortMint ${planName} 🎉`,
@@ -100,17 +108,44 @@ router.post("/checkout", authenticateJWT, async (req, res) => {
 
     const mode = payment_type === "one_time" ? "payment" : "subscription";
 
-    const session = await stripe.checkout.sessions.create({
+    // If upgrading subscription — set old one to cancel at period end
+    if (client.stripe_subscription_id && mode === "subscription") {
+      try {
+        await stripe.subscriptions.update(client.stripe_subscription_id, {
+          cancel_at_period_end: true,
+        });
+        await supabase
+          .from("clients")
+          .update({
+            subscription_cancel_at_period_end: true,
+          })
+          .eq("id", client.id);
+        console.log(
+          `Set old subscription ${client.stripe_subscription_id} to cancel at period end`,
+        );
+      } catch (err) {
+        console.error("Failed to update old subscription:", err.message);
+      }
+    }
+
+    // Reuse existing Stripe customer to avoid duplicates
+    const sessionConfig = {
       mode,
       payment_method_types: ["card"],
       line_items: [{ price: price_id, quantity: 1 }],
       client_reference_id: client.id,
-      customer_email: client.email,
       success_url: `${process.env.FRONTEND_URL}/dashboard?upgraded=true`,
       cancel_url: `${process.env.FRONTEND_URL}/pricing`,
       metadata: { price_id, payment_type: mode },
-    });
+    };
 
+    if (client.stripe_customer_id) {
+      sessionConfig.customer = client.stripe_customer_id;
+    } else {
+      sessionConfig.customer_email = client.email;
+    }
+
+    const session = await stripe.checkout.sessions.create(sessionConfig);
     return res.json({ checkout_url: session.url });
   } catch (err) {
     console.error("Stripe checkout error:", err);
@@ -152,10 +187,22 @@ router.post(
         return res.json({ received: true });
       }
 
+      // Idempotency — prevent duplicate processing if Stripe retries
+      const { data: existing } = await supabase
+        .from("payments")
+        .select("id")
+        .eq("stripe_session_id", session.id)
+        .maybeSingle();
+
+      if (existing) {
+        console.log("Duplicate checkout event ignored:", session.id);
+        return res.json({ received: true });
+      }
+
       const now = new Date();
 
       if (paymentType === "payment") {
-        // One-time — ADD remaining hours to new plan
+        // One-time — ADD remaining hours to new plan hours
         const { data: currentClient } = await supabase
           .from("clients")
           .select("usage_hours_limit, usage_hours_used")
@@ -167,20 +214,17 @@ router.post(
         const remainingHours = Math.max(currentLimit - currentUsed, 0);
         const newLimit = remainingHours + planDetails.hours;
 
+        // One-time is purely additive — never touch subscription fields
         await supabase
           .from("clients")
           .update({
             plan: planDetails.plan,
             plan_type: "one_time",
-            subscription_status: "inactive",
             usage_hours_limit: newLimit,
             plan_started_at: now.toISOString(),
-            plan_expires_at: null,
-            stripe_subscription_id: null,
           })
           .eq("id", clientId);
 
-        // Save payment record
         await savePayment({
           client_id: clientId,
           stripe_session_id: session.id,
@@ -200,7 +244,7 @@ router.post(
           `One-time: ${clientId} — ${planDetails.plan} — ${newLimit.toFixed(2)}hrs total`,
         );
       } else {
-        // Subscription — clean reset
+        // Subscription
         const stripeSubscription = await stripe.subscriptions.retrieve(
           session.subscription,
         );
@@ -211,13 +255,29 @@ router.post(
           stripeSubscription.current_period_end * 1000,
         );
 
+        const { data: currentClient } = await supabase
+          .from("clients")
+          .select("usage_hours_limit, usage_hours_used, stripe_subscription_id")
+          .eq("id", clientId)
+          .single();
+
+        const currentLimit = parseFloat(currentClient?.usage_hours_limit || 0);
+        const currentUsed = parseFloat(currentClient?.usage_hours_used || 0);
+        const remainingHours = Math.max(currentLimit - currentUsed, 0);
+
+        // Only carry hours on upgrade, not fresh signup
+        const isUpgrade = !!currentClient?.stripe_subscription_id;
+        const newLimit = isUpgrade
+          ? Math.min(planDetails.hours + remainingHours, planDetails.hours * 2)
+          : planDetails.hours;
+
         await supabase
           .from("clients")
           .update({
             plan: planDetails.plan,
             plan_type: "subscription",
             subscription_status: "active",
-            usage_hours_limit: planDetails.hours,
+            usage_hours_limit: newLimit,
             usage_hours_used: 0,
             plan_started_at: now.toISOString(),
             plan_expires_at: periodEnd.toISOString(),
@@ -229,7 +289,6 @@ router.post(
           })
           .eq("id", clientId);
 
-        // Save payment record
         await savePayment({
           client_id: clientId,
           stripe_session_id: session.id,
@@ -246,29 +305,42 @@ router.post(
 
         await sendPaymentEmail(clientId, planDetails, paymentType);
         console.log(
-          `Subscription: ${clientId} — ${planDetails.plan} — ${planDetails.hours}hrs`,
+          `Subscription: ${clientId} — ${planDetails.plan} — ${newLimit}hrs`,
         );
       }
     }
 
-    // ✅ invoice.paid — monthly renewal
+    // ✅ invoice.paid — monthly renewal only
     if (event.type === "invoice.paid") {
       const invoice = event.data.object;
-      if (invoice.billing_reason !== "subscription_cycle")
+
+      if (invoice.billing_reason !== "subscription_cycle") {
         return res.json({ received: true });
+      }
 
       const customerId = invoice.customer;
       const subscriptionId = invoice.subscription;
 
       const { data: client } = await supabase
         .from("clients")
-        .select("id, plan, plan_type")
+        .select("id, name, email")
         .eq("stripe_customer_id", customerId)
         .single();
 
       if (!client) return res.json({ received: true });
 
-      // Get subscription details for period dates
+      // Idempotency — prevent duplicate renewal processing
+      const { data: existingInvoice } = await supabase
+        .from("payments")
+        .select("id")
+        .eq("stripe_invoice_id", invoice.id)
+        .maybeSingle();
+
+      if (existingInvoice) {
+        console.log("Duplicate invoice event ignored:", invoice.id);
+        return res.json({ received: true });
+      }
+
       const stripeSubscription =
         await stripe.subscriptions.retrieve(subscriptionId);
       const periodStart = new Date(
@@ -276,16 +348,16 @@ router.post(
       );
       const periodEnd = new Date(stripeSubscription.current_period_end * 1000);
 
-      // Get plan details from subscription items
       const priceId = stripeSubscription.items.data[0]?.price?.id;
       const planDetails = PLAN_MAP[priceId];
-
       if (!planDetails) return res.json({ received: true });
 
-      // Reset hours for new billing cycle
+      // Clean reset for new billing cycle
       await supabase
         .from("clients")
         .update({
+          plan: planDetails.plan,
+          plan_type: "subscription",
           usage_hours_used: 0,
           usage_hours_limit: planDetails.hours,
           subscription_status: "active",
@@ -296,7 +368,6 @@ router.post(
         })
         .eq("id", client.id);
 
-      // Save payment record
       await savePayment({
         client_id: client.id,
         stripe_invoice_id: invoice.id,
@@ -314,11 +385,46 @@ router.post(
       console.log(
         `Renewal: ${client.id} — ${planDetails.plan} — hours reset to ${planDetails.hours}`,
       );
+
+      const planName =
+        planDetails.plan.charAt(0).toUpperCase() + planDetails.plan.slice(1);
+      sendMail({
+        to: client.email,
+        subject: `ShortMint ${planName} renewed 🔄`,
+        html: `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
+            <h1 style="color: #4F46E5; font-size: 24px; margin-bottom: 8px;">Your plan has renewed!</h1>
+            <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
+              Hi ${client.name}, your <strong>${planName}</strong> plan has renewed and your hours have been reset.
+            </p>
+            <div style="background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; padding: 20px; margin: 24px 0;">
+              <p style="margin: 0 0 8px 0; color: #111827; font-weight: 600;">Renewal summary</p>
+              <p style="margin: 0; color: #6B7280; font-size: 14px;">Plan: <strong>${planName}</strong></p>
+              <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Hours reset to: <strong>${planDetails.hours} hours</strong></p>
+              <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Amount charged: <strong>$${(invoice.amount_paid / 100).toFixed(2)}</strong></p>
+              <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Next renewal: <strong>${periodEnd.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</strong></p>
+            </div>
+            <a href="https://shortmint.addmora.com/dashboard"
+              style="display: inline-block; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
+              Start creating →
+            </a>
+            <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
+            <p style="color: #9CA3AF; font-size: 13px;">
+              Need help? Reply to this email or chat with us at shortmint.addmora.com.<br/>
+              — The ShortMint team
+            </p>
+          </div>
+        `,
+      }).catch((err) => console.error("Renewal email error:", err.message));
     }
 
     // ✅ invoice.payment_failed
     if (event.type === "invoice.payment_failed") {
       const invoice = event.data.object;
+
+      // Only handle subscription invoices
+      if (!invoice.subscription) return res.json({ received: true });
+
       const customerId = invoice.customer;
 
       const { data: client } = await supabase
@@ -329,7 +435,6 @@ router.post(
 
       if (!client) return res.json({ received: true });
 
-      // Mark as past_due
       await supabase
         .from("clients")
         .update({
@@ -337,7 +442,6 @@ router.post(
         })
         .eq("id", client.id);
 
-      // Save failed payment record
       await savePayment({
         client_id: client.id,
         stripe_invoice_id: invoice.id,
@@ -350,7 +454,6 @@ router.post(
         failure_reason: invoice.last_payment_error?.message || "Payment failed",
       });
 
-      // Notify user
       sendMail({
         to: client.email,
         subject: "Action needed — ShortMint payment failed",
@@ -379,7 +482,6 @@ router.post(
         console.error("Payment failed email error:", err.message),
       );
 
-      // Notify you
       sendMail({
         to: "saadhath@addmora.com",
         subject: `⚠️ Payment failed — ${client.email}`,
@@ -405,11 +507,17 @@ router.post(
 
       const { data: client } = await supabase
         .from("clients")
-        .select("id")
+        .select("id, stripe_subscription_id")
         .eq("stripe_customer_id", customerId)
         .single();
 
       if (!client) return res.json({ received: true });
+
+      // Ignore events for old subscriptions
+      if (client.stripe_subscription_id !== subscription.id) {
+        console.log(`Subscription updated event for old sub — ignoring`);
+        return res.json({ received: true });
+      }
 
       const periodEnd = new Date(subscription.current_period_end * 1000);
       const periodStart = new Date(subscription.current_period_start * 1000);
@@ -421,7 +529,7 @@ router.post(
           current_period_start: periodStart.toISOString(),
           current_period_end: periodEnd.toISOString(),
           plan_expires_at: periodEnd.toISOString(),
-          subscription_status: subscription.status,
+          subscription_status: mapSubscriptionStatus(subscription.status),
         })
         .eq("id", client.id);
 
@@ -437,11 +545,17 @@ router.post(
 
       const { data: client } = await supabase
         .from("clients")
-        .select("id, name, email")
+        .select("id, name, email, stripe_subscription_id")
         .eq("stripe_customer_id", customerId)
         .single();
 
       if (client) {
+        // Ignore if this is an old subscription (user already upgraded)
+        if (client.stripe_subscription_id !== subscription.id) {
+          console.log(`Old subscription deleted — ignoring`);
+          return res.json({ received: true });
+        }
+
         await supabase
           .from("clients")
           .update({
@@ -458,7 +572,6 @@ router.post(
           })
           .eq("id", client.id);
 
-        // Notify user
         sendMail({
           to: client.email,
           subject: "Your ShortMint subscription has ended",
@@ -486,6 +599,24 @@ router.post(
         );
 
         console.log(`Subscription deleted — ${client.id} downgraded to trial`);
+      }
+    }
+
+    // ✅ charge.refunded
+    if (event.type === "charge.refunded") {
+      const charge = event.data.object;
+      const paymentIntentId = charge.payment_intent;
+      const isFullRefund = charge.amount_refunded === charge.amount;
+
+      if (paymentIntentId) {
+        await supabase
+          .from("payments")
+          .update({ status: isFullRefund ? "refunded" : "partially_refunded" })
+          .eq("stripe_payment_intent_id", paymentIntentId);
+
+        console.log(
+          `Refund recorded: ${isFullRefund ? "full" : "partial"} for ${paymentIntentId}`,
+        );
       }
     }
 
