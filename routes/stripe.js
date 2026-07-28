@@ -614,6 +614,47 @@ router.post(
           .update({ status: isFullRefund ? "refunded" : "partially_refunded" })
           .eq("stripe_payment_intent_id", paymentIntentId);
 
+        // Notify user about refund
+        const { data: paymentRecord } = await supabase
+          .from("payments")
+          .select("client_id")
+          .eq("stripe_payment_intent_id", paymentIntentId)
+          .maybeSingle();
+
+        if (paymentRecord?.client_id) {
+          const { data: clientData } = await supabase
+            .from("clients")
+            .select("name, email")
+            .eq("id", paymentRecord.client_id)
+            .single();
+
+          if (clientData) {
+            sendMail({
+              to: clientData.email,
+              subject: `ShortMint refund processed ✅`,
+              html: `
+            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
+              <h1 style="color: #4F46E5; font-size: 22px; margin-bottom: 8px;">Refund processed</h1>
+              <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
+                Hi ${clientData.name}, your ${isFullRefund ? "full" : "partial"} refund of
+                <strong>$${(charge.amount_refunded / 100).toFixed(2)}</strong> has been processed.
+              </p>
+              <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
+                It may take 5–10 business days to appear on your statement depending on your bank.
+              </p>
+              <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
+              <p style="color: #9CA3AF; font-size: 13px;">
+                Questions? Reply to this email or chat with us at shortmint.addmora.com.<br/>
+                — The ShortMint team
+              </p>
+            </div>
+          `,
+            }).catch((err) =>
+              console.error("Refund email error:", err.message),
+            );
+          }
+        }
+
         console.log(
           `Refund recorded: ${isFullRefund ? "full" : "partial"} for ${paymentIntentId}`,
         );
