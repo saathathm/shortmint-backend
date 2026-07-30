@@ -189,18 +189,18 @@ router.post("/process", authenticateJWT, async (req, res) => {
           ? parseFloat(video_info.duration) / 60
           : null,
         video_id: video_info?.id || null,
+        start_seconds: start_seconds || 0,
+        end_seconds: end_seconds || 0,
       })
       .select()
       .single();
 
     if (videoError || !video) {
       console.error("Failed to create video row:", videoError?.message);
-      return res
-        .status(500)
-        .json({
-          error: "Failed to start processing. Please try again.",
-          message: videoError?.message || null,
-        });
+      return res.status(500).json({
+        error: "Failed to start processing. Please try again.",
+        message: videoError?.message || null,
+      });
     }
 
     // Fire n8n webhook without waiting
@@ -224,12 +224,10 @@ router.post("/process", authenticateJWT, async (req, res) => {
     });
   } catch (err) {
     console.error("Process video error:", err);
-    return res
-      .status(500)
-      .json({
-        error: "Something went wrong. Please try again.",
-        message: err.message || null,
-      });
+    return res.status(500).json({
+      error: "Something went wrong. Please try again.",
+      message: err.message || null,
+    });
   }
 });
 
@@ -265,27 +263,21 @@ router.get("/info", authenticateJWT, async (req, res) => {
   } catch (err) {
     console.error("Video info error:", err.message);
     if (err.message?.includes("private") || err.message?.includes("login")) {
-      return res
-        .status(400)
-        .json({
-          error: "This video is private or requires login.",
-          message: err.message || null,
-        });
-    }
-    if (err.message?.includes("not found") || err.message?.includes("404")) {
-      return res
-        .status(400)
-        .json({
-          error: "Video not found. Please check the URL.",
-          message: err.message || null,
-        });
-    }
-    return res
-      .status(400)
-      .json({
-        error: "Could not fetch video info. Check the URL and try again.",
+      return res.status(400).json({
+        error: "This video is private or requires login.",
         message: err.message || null,
       });
+    }
+    if (err.message?.includes("not found") || err.message?.includes("404")) {
+      return res.status(400).json({
+        error: "Video not found. Please check the URL.",
+        message: err.message || null,
+      });
+    }
+    return res.status(400).json({
+      error: "Could not fetch video info. Check the URL and try again.",
+      message: err.message || null,
+    });
   }
 });
 
@@ -349,12 +341,10 @@ router.get("/history", authenticateJWT, async (req, res) => {
       .limit(50);
 
     if (error)
-      return res
-        .status(500)
-        .json({
-          error: "Failed to load history.",
-          message: error.message || null,
-        });
+      return res.status(500).json({
+        error: "Failed to load history.",
+        message: error.message || null,
+      });
     return res.json({ videos: data });
   } catch (err) {
     console.error("History error:", err);
@@ -422,6 +412,67 @@ router.delete("/:videoId", authenticateJWT, async (req, res) => {
     return res
       .status(500)
       .json({ error: "Failed to delete video.", message: err.message || null });
+  }
+});
+
+// POST /api/video/reprocess/:videoId
+router.post("/reprocess/:videoId", authenticateJWT, async (req, res) => {
+  try {
+    const { videoId } = req.params;
+    const clientId = req.client.id;
+
+    const { data: video, error } = await supabase
+      .from("videos")
+      .select("*")
+      .eq("id", videoId)
+      .eq("client_id", clientId)
+      .single();
+
+    if (error || !video) {
+      return res.status(404).json({ error: "Video not found" });
+    }
+
+    // Uploaded videos — file deleted on failure, can't reprocess
+    if (!video.youtube_url) {
+      return res.status(400).json({
+        error: "uploaded_video",
+        message:
+          "Uploaded videos cannot be retried automatically. Please upload the file again from the dashboard.",
+      });
+    }
+
+    // Reset video status and delete old clips
+    await supabase
+      .from("videos")
+      .update({ status: "pending", error_message: null })
+      .eq("id", videoId);
+
+    await supabase.from("clips").delete().eq("video_id", videoId);
+
+    // Re-trigger n8n with original data
+    processVideo(
+      video.youtube_url,
+      clientId,
+      video.style,
+      videoId,
+      video.start_seconds || 0,
+      video.end_seconds ||
+        (video.duration_minutes ? video.duration_minutes * 60 : 0),
+      {
+        title: video.title || "video",
+        id: video.video_id || videoId,
+        duration: video.duration_minutes ? video.duration_minutes * 60 : 0,
+        webpage_url: video.youtube_url,
+      },
+      null,
+    ).catch((err) => {
+      console.log("n8n reprocess connection closed (expected):", err.message);
+    });
+
+    return res.json({ success: true, video_id: videoId });
+  } catch (err) {
+    console.error("Reprocess error:", err);
+    return res.status(500).json({ error: "Failed to reprocess video" });
   }
 });
 
