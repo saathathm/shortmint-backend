@@ -45,42 +45,14 @@ const authenticateJWT = async (req, res, next) => {
       .single();
 
     if (clientError || !client) {
-      // Auto-create for new OAuth users
-      const name =
-        decoded.user_metadata?.full_name ||
-        decoded.user_metadata?.name ||
-        decoded.email ||
-        "User";
-
-      const { data: newClient, error: createError } = await supabase
-        .from("clients")
-        .upsert(
-          {
-            id: userId,
-            name,
-            email: decoded.email || "",
-            password_hash: "managed_by_supabase_auth",
-            plan: "trial",
-            usage_hours_used: 0,
-          },
-          { onConflict: "id" },
-        )
-        .select()
-        .single();
-
-      if (createError || !newClient) {
-        console.error("Client create error:", createError?.message);
-        return res
-          .status(401)
-          .json({ error: "Could not create client record" });
-      }
-
-      req.user = { id: userId, email: decoded.email, app_metadata: decoded.app_metadata || {} };
-      req.client = newClient;
-      return next();
+      return res.status(401).json({ error: "Account not found" });
     }
 
-    req.user = { id: userId, email: decoded.email, app_metadata: decoded.app_metadata || {} };
+    req.user = {
+      id: userId,
+      email: decoded.email,
+      app_metadata: decoded.app_metadata || {},
+    };
     req.client = client;
     next();
   } catch (err) {

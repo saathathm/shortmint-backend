@@ -157,9 +157,16 @@ router.post("/google-callback", async (req, res) => {
 
     const name = data.user.user_metadata?.full_name || data.user.email;
 
-    // Upsert — no hours until trial or payment
-    await supabase.from("clients").upsert(
-      {
+    // Check if client already exists
+    const { data: existingClient } = await supabase
+      .from("clients")
+      .select("id")
+      .eq("id", data.user.id)
+      .maybeSingle();
+
+    if (!existingClient) {
+      // First time Google signup — create with defaults
+      await supabase.from("clients").insert({
         id: data.user.id,
         name,
         email: data.user.email,
@@ -168,9 +175,14 @@ router.post("/google-callback", async (req, res) => {
         usage_hours_used: 0,
         usage_hours_limit: 0,
         has_used_trial: false,
-      },
-      { onConflict: "id" },
-    );
+      });
+    } else {
+      // Existing user — only update name and email, never touch plan/hours
+      await supabase
+        .from("clients")
+        .update({ name, email: data.user.email })
+        .eq("id", data.user.id);
+    }
 
     const { data: client } = await supabase
       .from("clients")
