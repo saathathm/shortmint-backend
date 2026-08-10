@@ -14,7 +14,6 @@ router.post("/signup", async (req, res) => {
         .json({ error: "Name, email and password are required" });
     }
 
-    // Create Supabase auth user
     const { data, error } = await supabase.auth.admin.createUser({
       email,
       password,
@@ -24,7 +23,7 @@ router.post("/signup", async (req, res) => {
 
     if (error) return res.status(400).json({ error: error.message });
 
-    // Create clients row
+    // Create clients row — no hours, no plan access until trial or payment
     const { error: clientError } = await supabase.from("clients").upsert(
       {
         id: data.user.id,
@@ -33,13 +32,14 @@ router.post("/signup", async (req, res) => {
         password_hash: "managed_by_supabase_auth",
         plan: "trial",
         usage_hours_used: 0,
+        usage_hours_limit: 0,
+        has_used_trial: false,
       },
       { onConflict: "id" },
     );
 
     if (clientError) console.error("Client upsert error:", clientError.message);
 
-    // Sign in to get session tokens
     const { data: session, error: signInError } =
       await supabase.auth.signInWithPassword({ email, password });
     if (signInError)
@@ -51,30 +51,30 @@ router.post("/signup", async (req, res) => {
       .eq("id", data.user.id)
       .single();
 
-    // Send welcome email — fire and forget
+    // Welcome email — updated messaging
     sendMail({
       to: email,
       subject: "Welcome to ShortMint 🎬",
       html: `
-    <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
-      <h1 style="color: #4F46E5; font-size: 24px; margin-bottom: 8px;">Welcome to ShortMint, ${name}!</h1>
-      <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
-        You're all set. Start turning your long videos into viral Shorts in minutes.
-      </p>
-      <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
-        Your free trial includes <strong>15 minutes</strong> of processing — enough to try it out with a real video.
-      </p>
-      <a href="https://shortmint.addmora.com/dashboard"
-        style="display: inline-block; margin-top: 24px; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
-        Create your first Shorts →
-      </a>
-      <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
-      <p style="color: #9CA3AF; font-size: 13px;">
-        Questions? Just reply to this email or use the chat on our site.<br/>
-        — The ShortMint team
-      </p>
-    </div>
-  `,
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
+          <h1 style="color: #4F46E5; font-size: 24px; margin-bottom: 8px;">Welcome to ShortMint, ${name}!</h1>
+          <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
+            You're all set. To start creating Shorts, activate your free 7-day trial — no charge for 7 days.
+          </p>
+          <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
+            Your trial includes <strong>10 hours</strong> of processing. Cancel anytime before day 7 and you won't be charged a thing.
+          </p>
+          <a href="https://shortmint.addmora.com/dashboard"
+            style="display: inline-block; margin-top: 24px; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
+            Start your free trial →
+          </a>
+          <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
+          <p style="color: #9CA3AF; font-size: 13px;">
+            Questions? Just reply to this email or use the chat on our site.<br/>
+            — The ShortMint team
+          </p>
+        </div>
+      `,
     }).catch((err) => console.error("Welcome email error:", err.message));
 
     return res.json({
@@ -120,7 +120,7 @@ router.post("/login", async (req, res) => {
   }
 });
 
-// Get current user + client data — includes app_metadata for provider check
+// Get current user + client data
 router.get("/me", authenticateJWT, async (req, res) => {
   return res.json({
     user: {
@@ -132,7 +132,7 @@ router.get("/me", authenticateJWT, async (req, res) => {
   });
 });
 
-// Refresh client data (after plan upgrade etc.)
+// Refresh client data
 router.get("/refresh-client", authenticateJWT, async (req, res) => {
   const { data: client, error } = await supabase
     .from("clients")
@@ -155,8 +155,9 @@ router.post("/google-callback", async (req, res) => {
     if (error || !data.user)
       return res.status(401).json({ error: "Invalid token" });
 
-    // Upsert client row for Google OAuth users
     const name = data.user.user_metadata?.full_name || data.user.email;
+
+    // Upsert — no hours until trial or payment
     await supabase.from("clients").upsert(
       {
         id: data.user.id,
@@ -165,6 +166,8 @@ router.post("/google-callback", async (req, res) => {
         password_hash: "managed_by_supabase_auth",
         plan: "trial",
         usage_hours_used: 0,
+        usage_hours_limit: 0,
+        has_used_trial: false,
       },
       { onConflict: "id" },
     );
@@ -174,6 +177,7 @@ router.post("/google-callback", async (req, res) => {
       .select("*")
       .eq("id", data.user.id)
       .single();
+
     return res.json({ user: data.user, client });
   } catch (err) {
     console.error("Google callback error:", err);
