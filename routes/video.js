@@ -6,7 +6,17 @@ const { authenticateJWT } = require("../middleware/auth");
 
 // Platform tier access control
 const PLATFORM_TIERS = {
-  trial: ["youtube", "upload"],
+  trial: [
+    "youtube",
+    "facebook",
+    "instagram",
+    "vimeo",
+    "tiktok",
+    "rumble",
+    "loom",
+    "dropbox",
+    "upload",
+  ],
   starter: [
     "youtube",
     "facebook",
