@@ -7,6 +7,10 @@ const { sendMail } = require("../lib/mailer");
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
+const TRIAL_PRICE_ID = "price_1ToKspHTjUJCdbgvSu1udGJC"; // Starter monthly
+const TRIAL_HOURS = 10;
+const TRIAL_DAYS = 7;
+
 const PLAN_MAP = {
   price_1ToKspHTjUJCdbgvSu1udGJC: {
     plan: "starter",
@@ -85,7 +89,7 @@ const sendPaymentEmail = async (clientId, planDetails, paymentType) => {
         </a>
         <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
         <p style="color: #9CA3AF; font-size: 13px;">
-          Need help or have a payment issue? Reply to this email or chat with us at shortmint.addmora.com.<br/>
+          Need help? Reply to this email or chat with us at shortmint.addmora.com.<br/>
           — The ShortMint team
         </p>
       </div>
@@ -93,7 +97,74 @@ const sendPaymentEmail = async (clientId, planDetails, paymentType) => {
   }).catch((err) => console.error("Payment email error:", err.message));
 };
 
-// POST /api/stripe/checkout
+// POST /api/stripe/trial — start 7-day free trial
+router.post("/trial", authenticateJWT, async (req, res) => {
+  try {
+    const client = req.client;
+
+    // Block if already used trial
+    if (client.has_used_trial) {
+      return res.status(400).json({
+        error:
+          "You have already used your free trial. Please choose a plan to continue.",
+      });
+    }
+
+    // Block if already on active subscription
+    if (
+      client.stripe_subscription_id &&
+      client.subscription_status === "active"
+    ) {
+      return res.status(400).json({
+        error: "You already have an active subscription.",
+      });
+    }
+
+    // Create or reuse Stripe customer
+    let customerId = client.stripe_customer_id;
+    if (!customerId) {
+      const customer = await stripe.customers.create({
+        email: client.email,
+        name: client.name,
+        metadata: { client_id: client.id },
+      });
+      customerId = customer.id;
+      await supabase
+        .from("clients")
+        .update({
+          stripe_customer_id: customerId,
+        })
+        .eq("id", client.id);
+    }
+
+    // Create Stripe checkout session with trial
+    const session = await stripe.checkout.sessions.create({
+      mode: "subscription",
+      payment_method_types: ["card"],
+      customer: customerId,
+      line_items: [{ price: TRIAL_PRICE_ID, quantity: 1 }],
+      subscription_data: {
+        trial_period_days: TRIAL_DAYS,
+        metadata: { is_trial: "true", client_id: client.id },
+      },
+      client_reference_id: client.id,
+      success_url: `${process.env.FRONTEND_URL}/dashboard?trial=started`,
+      cancel_url: `${process.env.FRONTEND_URL}/dashboard`,
+      metadata: {
+        price_id: TRIAL_PRICE_ID,
+        payment_type: "subscription",
+        is_trial: "true",
+      },
+    });
+
+    return res.json({ checkout_url: session.url });
+  } catch (err) {
+    console.error("Trial checkout error:", err);
+    return res.status(500).json({ error: "Failed to start trial." });
+  }
+});
+
+// POST /api/stripe/checkout — direct subscription or one-time
 router.post("/checkout", authenticateJWT, async (req, res) => {
   try {
     const { price_id, payment_type } = req.body;
@@ -128,7 +199,6 @@ router.post("/checkout", authenticateJWT, async (req, res) => {
       }
     }
 
-    // Reuse existing Stripe customer to avoid duplicates
     const sessionConfig = {
       mode,
       payment_method_types: ["card"],
@@ -180,6 +250,7 @@ router.post(
       const clientId = session.client_reference_id;
       const priceId = session.metadata?.price_id;
       const paymentType = session.metadata?.payment_type;
+      const isTrial = session.metadata?.is_trial === "true";
       const planDetails = PLAN_MAP[priceId];
 
       if (!planDetails) {
@@ -187,7 +258,7 @@ router.post(
         return res.json({ received: true });
       }
 
-      // Idempotency — prevent duplicate processing if Stripe retries
+      // Idempotency check
       const { data: existing } = await supabase
         .from("payments")
         .select("id")
@@ -202,7 +273,7 @@ router.post(
       const now = new Date();
 
       if (paymentType === "payment") {
-        // One-time — ADD remaining hours to new plan hours
+        // One-time — additive, never touch subscription fields
         const { data: currentClient } = await supabase
           .from("clients")
           .select("usage_hours_limit, usage_hours_used")
@@ -214,7 +285,6 @@ router.post(
         const remainingHours = Math.max(currentLimit - currentUsed, 0);
         const newLimit = remainingHours + planDetails.hours;
 
-        // One-time is purely additive — never touch subscription fields
         await supabase
           .from("clients")
           .update({
@@ -243,8 +313,78 @@ router.post(
         console.log(
           `One-time: ${clientId} — ${planDetails.plan} — ${newLimit.toFixed(2)}hrs total`,
         );
+      } else if (isTrial) {
+        // Trial subscription — grant hours immediately, no charge yet
+        const stripeSubscription = await stripe.subscriptions.retrieve(
+          session.subscription,
+        );
+        const trialEnd = new Date(stripeSubscription.trial_end * 1000);
+        const periodEnd = new Date(
+          stripeSubscription.current_period_end * 1000,
+        );
+        const periodStart = new Date(
+          stripeSubscription.current_period_start * 1000,
+        );
+
+        await supabase
+          .from("clients")
+          .update({
+            plan: "starter",
+            plan_type: "subscription",
+            subscription_status: "active",
+            usage_hours_limit: TRIAL_HOURS,
+            usage_hours_used: 0,
+            plan_started_at: now.toISOString(),
+            plan_expires_at: periodEnd.toISOString(),
+            current_period_start: periodStart.toISOString(),
+            current_period_end: periodEnd.toISOString(),
+            stripe_subscription_id: session.subscription,
+            stripe_customer_id: session.customer,
+            subscription_cancel_at_period_end: false,
+            has_used_trial: true,
+            trial_ends_at: trialEnd.toISOString(),
+          })
+          .eq("id", clientId);
+
+        // No payment record — no charge yet
+        // Send trial started email
+        const { data: clientData } = await supabase
+          .from("clients")
+          .select("name, email")
+          .eq("id", clientId)
+          .single();
+
+        if (clientData) {
+          sendMail({
+            to: clientData.email,
+            subject: "Your ShortMint free trial has started 🎉",
+            html: `
+              <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
+                <h1 style="color: #4F46E5; font-size: 24px; margin-bottom: 8px;">Your free trial is active!</h1>
+                <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
+                  Hi ${clientData.name}, your 7-day free trial has started. You have <strong>10 hours</strong> to use — no charge until ${trialEnd.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}.
+                </p>
+                <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
+                  If you cancel before ${trialEnd.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}, you won't be charged anything.
+                </p>
+                <a href="https://shortmint.addmora.com/dashboard"
+                  style="display: inline-block; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
+                  Start creating →
+                </a>
+                <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
+                <p style="color: #9CA3AF; font-size: 13px;">
+                  — The ShortMint team
+                </p>
+              </div>
+            `,
+          }).catch((err) => console.error("Trial email error:", err.message));
+        }
+
+        console.log(
+          `Trial started: ${clientId} — 10hrs — trial ends ${trialEnd.toISOString()}`,
+        );
       } else {
-        // Subscription
+        // Direct subscription — no trial
         const stripeSubscription = await stripe.subscriptions.retrieve(
           session.subscription,
         );
@@ -264,8 +404,6 @@ router.post(
         const currentLimit = parseFloat(currentClient?.usage_hours_limit || 0);
         const currentUsed = parseFloat(currentClient?.usage_hours_used || 0);
         const remainingHours = Math.max(currentLimit - currentUsed, 0);
-
-        // Only carry hours on upgrade, not fresh signup
         const isUpgrade = !!currentClient?.stripe_subscription_id;
         const newLimit = isUpgrade
           ? Math.min(planDetails.hours + remainingHours, planDetails.hours * 2)
@@ -310,16 +448,30 @@ router.post(
       }
     }
 
-    // ✅ invoice.paid — monthly renewal only
+    // ✅ invoice.paid — handles both trial conversion and monthly renewal
     if (event.type === "invoice.paid") {
       const invoice = event.data.object;
+      const customerId = invoice.customer;
+      const subscriptionId = invoice.subscription;
 
-      if (invoice.billing_reason !== "subscription_cycle") {
+      // Handle trial conversion (billing_reason: subscription_cycle after trial)
+      const isTrial =
+        invoice.billing_reason === "subscription_create" &&
+        invoice.amount_paid === 0;
+
+      // Skip free trial invoice (no charge)
+      if (isTrial) {
+        console.log(`Trial invoice ignored (no charge): ${invoice.id}`);
         return res.json({ received: true });
       }
 
-      const customerId = invoice.customer;
-      const subscriptionId = invoice.subscription;
+      // Only handle renewals and trial conversions with actual charge
+      if (
+        invoice.billing_reason !== "subscription_cycle" &&
+        invoice.billing_reason !== "subscription_update"
+      ) {
+        return res.json({ received: true });
+      }
 
       const { data: client } = await supabase
         .from("clients")
@@ -329,7 +481,7 @@ router.post(
 
       if (!client) return res.json({ received: true });
 
-      // Idempotency — prevent duplicate renewal processing
+      // Idempotency check
       const { data: existingInvoice } = await supabase
         .from("payments")
         .select("id")
@@ -352,19 +504,26 @@ router.post(
       const planDetails = PLAN_MAP[priceId];
       if (!planDetails) return res.json({ received: true });
 
-      // Clean reset for new billing cycle
+      // Check if this is trial converting to paid
+      const isTrialConversion =
+        invoice.billing_reason === "subscription_cycle" &&
+        stripeSubscription.trial_end &&
+        Math.abs(new Date(stripeSubscription.trial_end * 1000) - new Date()) <
+          86400000 * 2;
+
       await supabase
         .from("clients")
         .update({
           plan: planDetails.plan,
           plan_type: "subscription",
-          usage_hours_used: 0,
+          usage_hours_used: isTrialConversion ? 0 : 0, // always reset on billing
           usage_hours_limit: planDetails.hours,
           subscription_status: "active",
           plan_expires_at: periodEnd.toISOString(),
           current_period_start: periodStart.toISOString(),
           current_period_end: periodEnd.toISOString(),
           subscription_cancel_at_period_end: false,
+          trial_ends_at: null, // clear trial end date
         })
         .eq("id", client.id);
 
@@ -379,54 +538,90 @@ router.post(
         plan: planDetails.plan,
         plan_type: "subscription",
         hours_granted: planDetails.hours,
-        event_type: "invoice.paid",
+        event_type: isTrialConversion ? "trial_converted" : "invoice.paid",
       });
-
-      console.log(
-        `Renewal: ${client.id} — ${planDetails.plan} — hours reset to ${planDetails.hours}`,
-      );
 
       const planName =
         planDetails.plan.charAt(0).toUpperCase() + planDetails.plan.slice(1);
-      sendMail({
-        to: client.email,
-        subject: `ShortMint ${planName} renewed 🔄`,
-        html: `
-          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
-            <h1 style="color: #4F46E5; font-size: 24px; margin-bottom: 8px;">Your plan has renewed!</h1>
-            <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
-              Hi ${client.name}, your <strong>${planName}</strong> plan has renewed and your hours have been reset.
-            </p>
-            <div style="background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; padding: 20px; margin: 24px 0;">
-              <p style="margin: 0 0 8px 0; color: #111827; font-weight: 600;">Renewal summary</p>
-              <p style="margin: 0; color: #6B7280; font-size: 14px;">Plan: <strong>${planName}</strong></p>
-              <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Hours reset to: <strong>${planDetails.hours} hours</strong></p>
-              <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Amount charged: <strong>$${(invoice.amount_paid / 100).toFixed(2)}</strong></p>
-              <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Next renewal: <strong>${periodEnd.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</strong></p>
+
+      if (isTrialConversion) {
+        // Trial converted to paid — send conversion email
+        sendMail({
+          to: client.email,
+          subject: `Your ShortMint trial has converted — $29 charged`,
+          html: `
+            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
+              <h1 style="color: #4F46E5; font-size: 24px; margin-bottom: 8px;">Your trial has ended</h1>
+              <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
+                Hi ${client.name}, your 7-day free trial has ended and your Starter plan subscription has started.
+              </p>
+              <div style="background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; padding: 20px; margin: 24px 0;">
+                <p style="margin: 0 0 8px 0; color: #111827; font-weight: 600;">Billing summary</p>
+                <p style="margin: 0; color: #6B7280; font-size: 14px;">Plan: <strong>Starter</strong></p>
+                <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Amount charged: <strong>$${(invoice.amount_paid / 100).toFixed(2)}</strong></p>
+                <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Hours: <strong>10 hours/month</strong></p>
+                <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Next renewal: <strong>${periodEnd.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</strong></p>
+              </div>
+              <a href="https://shortmint.addmora.com/dashboard"
+                style="display: inline-block; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
+                Continue creating →
+              </a>
+              <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
+              <p style="color: #9CA3AF; font-size: 13px;">
+                — The ShortMint team
+              </p>
             </div>
-            <a href="https://shortmint.addmora.com/dashboard"
-              style="display: inline-block; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
-              Start creating →
-            </a>
-            <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
-            <p style="color: #9CA3AF; font-size: 13px;">
-              Need help? Reply to this email or chat with us at shortmint.addmora.com.<br/>
-              — The ShortMint team
-            </p>
-          </div>
-        `,
-      }).catch((err) => console.error("Renewal email error:", err.message));
+          `,
+        }).catch((err) =>
+          console.error("Trial conversion email error:", err.message),
+        );
+
+        console.log(
+          `Trial converted to paid: ${client.id} — $${(invoice.amount_paid / 100).toFixed(2)}`,
+        );
+      } else {
+        // Regular renewal email
+        sendMail({
+          to: client.email,
+          subject: `ShortMint ${planName} renewed 🔄`,
+          html: `
+            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
+              <h1 style="color: #4F46E5; font-size: 24px; margin-bottom: 8px;">Your plan has renewed!</h1>
+              <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
+                Hi ${client.name}, your <strong>${planName}</strong> plan has renewed and your hours have been reset.
+              </p>
+              <div style="background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; padding: 20px; margin: 24px 0;">
+                <p style="margin: 0 0 8px 0; color: #111827; font-weight: 600;">Renewal summary</p>
+                <p style="margin: 0; color: #6B7280; font-size: 14px;">Plan: <strong>${planName}</strong></p>
+                <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Hours reset to: <strong>${planDetails.hours} hours</strong></p>
+                <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Amount charged: <strong>$${(invoice.amount_paid / 100).toFixed(2)}</strong></p>
+                <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Next renewal: <strong>${periodEnd.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</strong></p>
+              </div>
+              <a href="https://shortmint.addmora.com/dashboard"
+                style="display: inline-block; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
+                Start creating →
+              </a>
+              <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
+              <p style="color: #9CA3AF; font-size: 13px;">
+                Need help? Reply to this email or chat with us at shortmint.addmora.com.<br/>
+                — The ShortMint team
+              </p>
+            </div>
+          `,
+        }).catch((err) => console.error("Renewal email error:", err.message));
+
+        console.log(
+          `Renewal: ${client.id} — ${planDetails.plan} — hours reset to ${planDetails.hours}`,
+        );
+      }
     }
 
     // ✅ invoice.payment_failed
     if (event.type === "invoice.payment_failed") {
       const invoice = event.data.object;
-
-      // Only handle subscription invoices
       if (!invoice.subscription) return res.json({ received: true });
 
       const customerId = invoice.customer;
-
       const { data: client } = await supabase
         .from("clients")
         .select("id, name, email")
@@ -513,7 +708,6 @@ router.post(
 
       if (!client) return res.json({ received: true });
 
-      // Ignore events for old subscriptions
       if (client.stripe_subscription_id !== subscription.id) {
         console.log(`Subscription updated event for old sub — ignoring`);
         return res.json({ received: true });
@@ -550,39 +744,53 @@ router.post(
         .single();
 
       if (client) {
-        // Ignore if this is an old subscription (user already upgraded)
         if (client.stripe_subscription_id !== subscription.id) {
           console.log(`Old subscription deleted — ignoring`);
           return res.json({ received: true });
         }
 
+        // Reset to no access — hours to 0
         await supabase
           .from("clients")
           .update({
             plan: "trial",
             plan_type: "one_time",
             subscription_status: "inactive",
-            usage_hours_limit: 0.25,
+            usage_hours_limit: 0,
             usage_hours_used: 0,
             stripe_subscription_id: null,
             plan_expires_at: null,
             current_period_start: null,
             current_period_end: null,
             subscription_cancel_at_period_end: false,
+            trial_ends_at: null,
           })
           .eq("id", client.id);
 
+        // Check if this was cancelled during trial
+        const wasTrial =
+          subscription.trial_end &&
+          new Date(subscription.trial_end * 1000) > new Date();
+
         sendMail({
           to: client.email,
-          subject: "Your ShortMint subscription has ended",
+          subject: wasTrial
+            ? "Your ShortMint trial has been cancelled"
+            : "Your ShortMint subscription has ended",
           html: `
             <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
-              <h1 style="color: #4F46E5; font-size: 22px; margin-bottom: 8px;">Subscription ended</h1>
+              <h1 style="color: #4F46E5; font-size: 22px; margin-bottom: 8px;">
+                ${wasTrial ? "Trial cancelled" : "Subscription ended"}
+              </h1>
               <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
-                Hi ${client.name}, your ShortMint subscription has ended and your account has been moved to the free trial.
+                Hi ${client.name}, ${
+                  wasTrial
+                    ? "your free trial has been cancelled. You have not been charged."
+                    : "your ShortMint subscription has ended and your account has been moved back to the free tier."
+                }
               </p>
               <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
-                We'd love to have you back. You can resubscribe anytime.
+                We'd love to have you back. You can subscribe anytime.
               </p>
               <a href="https://shortmint.addmora.com/pricing"
                 style="display: inline-block; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
@@ -598,7 +806,9 @@ router.post(
           console.error("Cancellation email error:", err.message),
         );
 
-        console.log(`Subscription deleted — ${client.id} downgraded to trial`);
+        console.log(
+          `Subscription deleted — ${client.id} — ${wasTrial ? "trial cancelled" : "downgraded"}`,
+        );
       }
     }
 
@@ -614,7 +824,6 @@ router.post(
           .update({ status: isFullRefund ? "refunded" : "partially_refunded" })
           .eq("stripe_payment_intent_id", paymentIntentId);
 
-        // Notify user about refund
         const { data: paymentRecord } = await supabase
           .from("payments")
           .select("client_id")
@@ -633,22 +842,22 @@ router.post(
               to: clientData.email,
               subject: `ShortMint refund processed ✅`,
               html: `
-            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
-              <h1 style="color: #4F46E5; font-size: 22px; margin-bottom: 8px;">Refund processed</h1>
-              <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
-                Hi ${clientData.name}, your ${isFullRefund ? "full" : "partial"} refund of
-                <strong>$${(charge.amount_refunded / 100).toFixed(2)}</strong> has been processed.
-              </p>
-              <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
-                It may take 5–10 business days to appear on your statement depending on your bank.
-              </p>
-              <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
-              <p style="color: #9CA3AF; font-size: 13px;">
-                Questions? Reply to this email or chat with us at shortmint.addmora.com.<br/>
-                — The ShortMint team
-              </p>
-            </div>
-          `,
+                <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
+                  <h1 style="color: #4F46E5; font-size: 22px; margin-bottom: 8px;">Refund processed</h1>
+                  <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
+                    Hi ${clientData.name}, your ${isFullRefund ? "full" : "partial"} refund of
+                    <strong>$${(charge.amount_refunded / 100).toFixed(2)}</strong> has been processed.
+                  </p>
+                  <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
+                    It may take 5–10 business days to appear on your statement depending on your bank.
+                  </p>
+                  <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
+                  <p style="color: #9CA3AF; font-size: 13px;">
+                    Questions? Reply to this email or chat with us at shortmint.addmora.com.<br/>
+                    — The ShortMint team
+                  </p>
+                </div>
+              `,
             }).catch((err) =>
               console.error("Refund email error:", err.message),
             );
@@ -687,8 +896,9 @@ router.post("/cancel", authenticateJWT, async (req, res) => {
 
     return res.json({
       success: true,
-      message:
-        "Your subscription will be cancelled at the end of the billing period. You'll keep access until then.",
+      message: client.trial_ends_at
+        ? "Your trial has been cancelled. You will not be charged."
+        : "Your subscription will be cancelled at the end of the billing period. You'll keep access until then.",
     });
   } catch (err) {
     console.error("Cancel subscription error:", err);
