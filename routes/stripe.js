@@ -883,20 +883,29 @@ router.post("/cancel", authenticateJWT, async (req, res) => {
       return res.status(400).json({ error: "No active subscription found." });
     }
 
-    await stripe.subscriptions.update(client.stripe_subscription_id, {
-      cancel_at_period_end: true,
-    });
+    const isOnTrial =
+      client.trial_ends_at && new Date(client.trial_ends_at) > new Date();
 
-    await supabase
-      .from("clients")
-      .update({
-        subscription_cancel_at_period_end: true,
-      })
-      .eq("id", client.id);
+    if (isOnTrial) {
+      // Cancel immediately — user hasn't been charged
+      await stripe.subscriptions.cancel(client.stripe_subscription_id);
+      // DB will be updated by customer.subscription.deleted webhook
+    } else {
+      // Regular subscription — cancel at period end, keep access
+      await stripe.subscriptions.update(client.stripe_subscription_id, {
+        cancel_at_period_end: true,
+      });
+      await supabase
+        .from("clients")
+        .update({
+          subscription_cancel_at_period_end: true,
+        })
+        .eq("id", client.id);
+    }
 
     return res.json({
       success: true,
-      message: client.trial_ends_at
+      message: isOnTrial
         ? "Your trial has been cancelled. You will not be charged."
         : "Your subscription will be cancelled at the end of the billing period. You'll keep access until then.",
     });
