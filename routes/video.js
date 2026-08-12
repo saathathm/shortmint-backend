@@ -257,7 +257,7 @@ router.get("/info", authenticateJWT, async (req, res) => {
 
     const output = execSync(`yt-dlp --no-playlist --dump-json "${url}"`, {
       encoding: "utf8",
-      timeout: 30000,
+      timeout: 60000,
     });
 
     const data = JSON.parse(output);
