@@ -34,7 +34,7 @@ app.use(express.json({ limit: '10mb' }))
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', service: 'ShortMint Backend', timestamp: new Date().toISOString() })
+  res.json({ status: 'ok', service: 'ShortTrim Backend', timestamp: new Date().toISOString() })
 })
 
 // Routes
@@ -62,5 +62,5 @@ app.use((err, req, res, next) => {
 })
 
 app.listen(PORT, () => {
-  console.log(`ShortMint backend running on port ${PORT}`)
+  console.log(`ShortTrim backend running on port ${PORT}`)
 })

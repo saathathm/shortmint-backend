@@ -29,7 +29,7 @@ router.post('/', async (req, res) => {
       subject: `New lead: ${email}`,
       html: `
         <div style="font-family: sans-serif; padding: 24px;">
-          <h2 style="color: #4F46E5;">New ShortMint Lead</h2>
+          <h2 style="color: #4F46E5;">New ShortTrim Lead</h2>
           <p><strong>Email:</strong> ${email}</p>
           <p><strong>Content type:</strong> ${content_type || 'Not specified'}</p>
         </div>
@@ -39,7 +39,7 @@ router.post('/', async (req, res) => {
     // Send welcome email to lead
     sendMail({
       to: email,
-      subject: 'Thanks for your interest in ShortMint 👋',
+      subject: 'Thanks for your interest in ShortTrim 👋',
       html: `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
           <h1 style="color: #4F46E5; font-size: 22px; margin-bottom: 8px;">Thanks for reaching out!</h1>
@@ -47,15 +47,15 @@ router.post('/', async (req, res) => {
             We got your message and we'll be in touch soon with tips, updates, and creator resources.
           </p>
           <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
-            In the meantime — did you know ShortMint has a free trial? No card needed.
+            In the meantime — did you know ShortTrim has a free trial? No card needed.
           </p>
           <a href="https://shorttrim.com/signup"
             style="display: inline-block; margin-top: 20px; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
-            Try ShortMint free →
+            Try ShortTrim free →
           </a>
           <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
           <p style="color: #9CA3AF; font-size: 13px;">
-            — The ShortMint team
+            — The ShortTrim team
           </p>
         </div>
       `

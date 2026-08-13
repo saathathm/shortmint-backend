@@ -54,10 +54,10 @@ router.post("/signup", async (req, res) => {
     // Welcome email — updated messaging
     sendMail({
       to: email,
-      subject: "Welcome to ShortMint 🎬",
+      subject: "Welcome to ShortTrim 🎬",
       html: `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
-          <h1 style="color: #4F46E5; font-size: 24px; margin-bottom: 8px;">Welcome to ShortMint, ${name}!</h1>
+          <h1 style="color: #4F46E5; font-size: 24px; margin-bottom: 8px;">Welcome to ShortTrim, ${name}!</h1>
           <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
             You're all set. To start creating Shorts, activate your free 7-day trial — no charge for 7 days.
           </p>
@@ -71,7 +71,7 @@ router.post("/signup", async (req, res) => {
           <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
           <p style="color: #9CA3AF; font-size: 13px;">
             Questions? Just reply to this email or use the chat on our site.<br/>
-            — The ShortMint team
+            — The ShortTrim team
           </p>
         </div>
       `,

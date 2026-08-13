@@ -70,7 +70,7 @@ const sendPaymentEmail = async (clientId, planDetails, paymentType) => {
   const isOneTime = paymentType === "payment";
   sendMail({
     to: clientData.email,
-    subject: `You're on ShortMint ${planName} 🎉`,
+    subject: `You're on ShortTrim ${planName} 🎉`,
     html: `
       <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
         <h1 style="color: #4F46E5; font-size: 24px; margin-bottom: 8px;">Payment confirmed!</h1>
@@ -90,7 +90,7 @@ const sendPaymentEmail = async (clientId, planDetails, paymentType) => {
         <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
         <p style="color: #9CA3AF; font-size: 13px;">
           Need help? Reply to this email or chat with us at shorttrim.com.<br/>
-          — The ShortMint team
+          — The ShortTrim team
         </p>
       </div>
     `,
@@ -357,7 +357,7 @@ router.post(
         if (clientData) {
           sendMail({
             to: clientData.email,
-            subject: "Your ShortMint free trial has started 🎉",
+            subject: "Your ShortTrim free trial has started 🎉",
             html: `
               <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
                 <h1 style="color: #4F46E5; font-size: 24px; margin-bottom: 8px;">Your free trial is active!</h1>
@@ -373,7 +373,7 @@ router.post(
                 </a>
                 <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
                 <p style="color: #9CA3AF; font-size: 13px;">
-                  — The ShortMint team
+                  — The ShortTrim team
                 </p>
               </div>
             `,
@@ -548,7 +548,7 @@ router.post(
         // Trial converted to paid — send conversion email
         sendMail({
           to: client.email,
-          subject: `Your ShortMint trial has converted — $29 charged`,
+          subject: `Your ShortTrim trial has converted — $29 charged`,
           html: `
             <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
               <h1 style="color: #4F46E5; font-size: 24px; margin-bottom: 8px;">Your trial has ended</h1>
@@ -568,7 +568,7 @@ router.post(
               </a>
               <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
               <p style="color: #9CA3AF; font-size: 13px;">
-                — The ShortMint team
+                — The ShortTrim team
               </p>
             </div>
           `,
@@ -583,7 +583,7 @@ router.post(
         // Regular renewal email
         sendMail({
           to: client.email,
-          subject: `ShortMint ${planName} renewed 🔄`,
+          subject: `ShortTrim ${planName} renewed 🔄`,
           html: `
             <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
               <h1 style="color: #4F46E5; font-size: 24px; margin-bottom: 8px;">Your plan has renewed!</h1>
@@ -604,7 +604,7 @@ router.post(
               <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
               <p style="color: #9CA3AF; font-size: 13px;">
                 Need help? Reply to this email or chat with us at shorttrim.com.<br/>
-                — The ShortMint team
+                — The ShortTrim team
               </p>
             </div>
           `,
@@ -651,12 +651,12 @@ router.post(
 
       sendMail({
         to: client.email,
-        subject: "Action needed — ShortMint payment failed",
+        subject: "Action needed — ShortTrim payment failed",
         html: `
           <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
             <h1 style="color: #EF4444; font-size: 22px; margin-bottom: 8px;">Payment failed</h1>
             <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
-              Hi ${client.name}, we couldn't process your payment for ShortMint.
+              Hi ${client.name}, we couldn't process your payment for ShortTrim.
             </p>
             <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
               Please update your payment method to keep your account active.
@@ -669,7 +669,7 @@ router.post(
             <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
             <p style="color: #9CA3AF; font-size: 13px;">
               Need help? Reply to this email or chat with us at shorttrim.com.<br/>
-              — The ShortMint team
+              — The ShortTrim team
             </p>
           </div>
         `,
@@ -775,8 +775,8 @@ router.post(
         sendMail({
           to: client.email,
           subject: wasTrial
-            ? "Your ShortMint trial has been cancelled"
-            : "Your ShortMint subscription has ended",
+            ? "Your ShortTrim trial has been cancelled"
+            : "Your ShortTrim subscription has ended",
           html: `
             <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
               <h1 style="color: #4F46E5; font-size: 22px; margin-bottom: 8px;">
@@ -786,7 +786,7 @@ router.post(
                 Hi ${client.name}, ${
                   wasTrial
                     ? "your free trial has been cancelled. You have not been charged."
-                    : "your ShortMint subscription has ended and your account has been moved back to the free tier."
+                    : "your ShortTrim subscription has ended and your account has been moved back to the free tier."
                 }
               </p>
               <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
@@ -798,7 +798,7 @@ router.post(
               </a>
               <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
               <p style="color: #9CA3AF; font-size: 13px;">
-                — The ShortMint team
+                — The ShortTrim team
               </p>
             </div>
           `,
@@ -840,7 +840,7 @@ router.post(
           if (clientData) {
             sendMail({
               to: clientData.email,
-              subject: `ShortMint refund processed ✅`,
+              subject: `ShortTrim refund processed ✅`,
               html: `
                 <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
                   <h1 style="color: #4F46E5; font-size: 22px; margin-bottom: 8px;">Refund processed</h1>
@@ -854,7 +854,7 @@ router.post(
                   <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
                   <p style="color: #9CA3AF; font-size: 13px;">
                     Questions? Reply to this email or chat with us at shorttrim.com.<br/>
-                    — The ShortMint team
+                    — The ShortTrim team
                   </p>
                 </div>
               `,
