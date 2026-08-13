@@ -26,7 +26,7 @@ router.post("/", authenticateJWT, async (req, res) => {
     // Notify you only for bad feedback
     if (rating === "bad") {
       sendMail({
-        to: "saadhath@addmora.com",
+        to: "hello@addmora.com",
         subject: `⚠️ Bad feedback from ${req.client.email}`,
         html: `
           <div style="font-family: sans-serif; padding: 24px;">

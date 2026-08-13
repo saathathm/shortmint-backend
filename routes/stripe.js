@@ -83,13 +83,13 @@ const sendPaymentEmail = async (clientId, planDetails, paymentType) => {
           <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Hours: <strong>${planDetails.hours} hours</strong></p>
           <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Type: <strong>${isOneTime ? "One-time purchase — hours never expire" : "Monthly subscription — renews automatically"}</strong></p>
         </div>
-        <a href="https://shortmint.addmora.com/dashboard"
+        <a href="https://shorttrim.com/dashboard"
           style="display: inline-block; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
           Start creating →
         </a>
         <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
         <p style="color: #9CA3AF; font-size: 13px;">
-          Need help? Reply to this email or chat with us at shortmint.addmora.com.<br/>
+          Need help? Reply to this email or chat with us at shorttrim.com.<br/>
           — The ShortMint team
         </p>
       </div>
@@ -367,7 +367,7 @@ router.post(
                 <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
                   If you cancel before ${trialEnd.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}, you won't be charged anything.
                 </p>
-                <a href="https://shortmint.addmora.com/dashboard"
+                <a href="https://shorttrim.com/dashboard"
                   style="display: inline-block; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
                   Start creating →
                 </a>
@@ -562,7 +562,7 @@ router.post(
                 <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Hours: <strong>10 hours/month</strong></p>
                 <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Next renewal: <strong>${periodEnd.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</strong></p>
               </div>
-              <a href="https://shortmint.addmora.com/dashboard"
+              <a href="https://shorttrim.com/dashboard"
                 style="display: inline-block; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
                 Continue creating →
               </a>
@@ -597,13 +597,13 @@ router.post(
                 <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Amount charged: <strong>$${(invoice.amount_paid / 100).toFixed(2)}</strong></p>
                 <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Next renewal: <strong>${periodEnd.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</strong></p>
               </div>
-              <a href="https://shortmint.addmora.com/dashboard"
+              <a href="https://shorttrim.com/dashboard"
                 style="display: inline-block; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
                 Start creating →
               </a>
               <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
               <p style="color: #9CA3AF; font-size: 13px;">
-                Need help? Reply to this email or chat with us at shortmint.addmora.com.<br/>
+                Need help? Reply to this email or chat with us at shorttrim.com.<br/>
                 — The ShortMint team
               </p>
             </div>
@@ -662,13 +662,13 @@ router.post(
               Please update your payment method to keep your account active.
               Stripe will retry automatically over the next few days.
             </p>
-            <a href="https://shortmint.addmora.com/settings"
+            <a href="https://shorttrim.com/settings"
               style="display: inline-block; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
               Update payment method →
             </a>
             <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
             <p style="color: #9CA3AF; font-size: 13px;">
-              Need help? Reply to this email or chat with us at shortmint.addmora.com.<br/>
+              Need help? Reply to this email or chat with us at shorttrim.com.<br/>
               — The ShortMint team
             </p>
           </div>
@@ -678,7 +678,7 @@ router.post(
       );
 
       sendMail({
-        to: "saadhath@addmora.com",
+        to: "hello@addmora.com",
         subject: `⚠️ Payment failed — ${client.email}`,
         html: `
           <div style="font-family: sans-serif; padding: 24px;">
@@ -792,7 +792,7 @@ router.post(
               <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
                 We'd love to have you back. You can subscribe anytime.
               </p>
-              <a href="https://shortmint.addmora.com/pricing"
+              <a href="https://shorttrim.com/pricing"
                 style="display: inline-block; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
                 View plans →
               </a>
@@ -853,7 +853,7 @@ router.post(
                   </p>
                   <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
                   <p style="color: #9CA3AF; font-size: 13px;">
-                    Questions? Reply to this email or chat with us at shortmint.addmora.com.<br/>
+                    Questions? Reply to this email or chat with us at shorttrim.com.<br/>
                     — The ShortMint team
                   </p>
                 </div>

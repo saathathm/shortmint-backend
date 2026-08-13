@@ -25,7 +25,7 @@ router.post('/', async (req, res) => {
 
     // Notify you
     sendMail({
-      to: 'saadhath@addmora.com',
+      to: 'hello@addmora.com',
       subject: `New lead: ${email}`,
       html: `
         <div style="font-family: sans-serif; padding: 24px;">
@@ -49,7 +49,7 @@ router.post('/', async (req, res) => {
           <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
             In the meantime — did you know ShortMint has a free trial? No card needed.
           </p>
-          <a href="https://shortmint.addmora.com/signup"
+          <a href="https://shorttrim.com/signup"
             style="display: inline-block; margin-top: 20px; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
             Try ShortMint free →
           </a>

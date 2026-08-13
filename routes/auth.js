@@ -64,7 +64,7 @@ router.post("/signup", async (req, res) => {
           <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
             Your trial includes <strong>10 hours</strong> of processing. Cancel anytime before day 7 and you won't be charged a thing.
           </p>
-          <a href="https://shortmint.addmora.com/dashboard"
+          <a href="https://shorttrim.com/dashboard"
             style="display: inline-block; margin-top: 24px; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
             Start your free trial →
           </a>

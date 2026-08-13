@@ -17,7 +17,7 @@ const PORT = process.env.PORT || 3001
 // CORS
 app.use(cors({
   origin: [
-    process.env.FRONTEND_URL || 'https://shortmint.addmora.com',
+    process.env.FRONTEND_URL || 'https://shorttrim.com',
     'http://localhost:3000',
     'http://localhost:5173'
   ],
