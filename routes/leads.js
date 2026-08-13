@@ -25,7 +25,7 @@ router.post('/', async (req, res) => {
 
     // Notify you
     sendMail({
-      to: 'hello@addmora.com',
+      to: 'hello@shorttrim.com',
       subject: `New lead: ${email}`,
       html: `
         <div style="font-family: sans-serif; padding: 24px;">

@@ -678,7 +678,7 @@ router.post(
       );
 
       sendMail({
-        to: "hello@addmora.com",
+        to: "hello@shorttrim.com",
         subject: `⚠️ Payment failed — ${client.email}`,
         html: `
           <div style="font-family: sans-serif; padding: 24px;">

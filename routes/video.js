@@ -151,7 +151,7 @@ router.post("/process", authenticateJWT, async (req, res) => {
     if (client.plan === "cancelled") {
       return res.status(403).json({
         error:
-          "Your account is inactive. Please contact support at hello@addmora.com.",
+          "Your account is inactive. Please contact support at hello@shorttrim.com.",
       });
     }
 
