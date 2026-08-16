@@ -276,7 +276,9 @@ router.post(
         // One-time — additive, never touch subscription fields
         const { data: currentClient } = await supabase
           .from("clients")
-          .select("usage_hours_limit, usage_hours_used")
+          .select(
+            "usage_hours_limit, usage_hours_used, plan, plan_type, stripe_subscription_id",
+          )
           .eq("id", clientId)
           .single();
 
@@ -285,11 +287,16 @@ router.post(
         const remainingHours = Math.max(currentLimit - currentUsed, 0);
         const newLimit = remainingHours + planDetails.hours;
 
+        // If user has active subscription — keep their plan and plan_type unchanged
+        const hasActiveSubscription = !!currentClient?.stripe_subscription_id;
+
         await supabase
           .from("clients")
           .update({
-            plan: planDetails.plan,
-            plan_type: "one_time",
+            plan: hasActiveSubscription ? currentClient.plan : planDetails.plan,
+            plan_type: hasActiveSubscription
+              ? currentClient.plan_type
+              : "one_time",
             usage_hours_limit: newLimit,
             plan_started_at: now.toISOString(),
           })
