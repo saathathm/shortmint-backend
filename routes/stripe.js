@@ -58,7 +58,12 @@ const savePayment = async (data) => {
   if (error) console.error("Failed to save payment record:", error.message);
 };
 
-const sendPaymentEmail = async (clientId, planDetails, paymentType) => {
+const sendPaymentEmail = async (
+  clientId,
+  planDetails,
+  paymentType,
+  isTopUp = false,
+) => {
   const { data: clientData } = await supabase
     .from("clients")
     .select("name, email")
@@ -68,20 +73,26 @@ const sendPaymentEmail = async (clientId, planDetails, paymentType) => {
   const planName =
     planDetails.plan.charAt(0).toUpperCase() + planDetails.plan.slice(1);
   const isOneTime = paymentType === "payment";
+
   sendMail({
     to: clientData.email,
-    subject: `You're on ShortTrim ${planName} 🎉`,
+    subject: isTopUp
+      ? `${planDetails.hours} hours added to your ShortTrim account ✅`
+      : `You're on ShortTrim ${planName} 🎉`,
     html: `
       <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
-        <h1 style="color: #4F46E5; font-size: 24px; margin-bottom: 8px;">Payment confirmed!</h1>
+        <h1 style="color: #4F46E5; font-size: 24px; margin-bottom: 8px;">${isTopUp ? "Hours added!" : "Payment confirmed!"}</h1>
         <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
-          Hi ${clientData.name}, your <strong>${planName}</strong> plan is now active.
+          Hi ${clientData.name}, ${
+            isTopUp
+              ? `<strong>${planDetails.hours} hours</strong> have been added to your account. They never expire.`
+              : `your <strong>${planName}</strong> plan is now active.`
+          }
         </p>
         <div style="background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; padding: 20px; margin: 24px 0;">
-          <p style="margin: 0 0 8px 0; color: #111827; font-weight: 600;">Plan summary</p>
-          <p style="margin: 0; color: #6B7280; font-size: 14px;">Plan: <strong>${planName}</strong></p>
-          <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Hours: <strong>${planDetails.hours} hours</strong></p>
-          <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Type: <strong>${isOneTime ? "One-time purchase — hours never expire" : "Monthly subscription — renews automatically"}</strong></p>
+          <p style="margin: 0 0 8px 0; color: #111827; font-weight: 600;">Summary</p>
+          <p style="margin: 0; color: #6B7280; font-size: 14px;">Hours: <strong>${planDetails.hours} hours${isTopUp ? " (never expire)" : ""}</strong></p>
+          <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Type: <strong>${isOneTime ? "One-time purchase" : "Monthly subscription — renews automatically"}</strong></p>
         </div>
         <a href="https://shorttrim.com/dashboard"
           style="display: inline-block; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
@@ -273,31 +284,26 @@ router.post(
       const now = new Date();
 
       if (paymentType === "payment") {
-        // One-time — additive, never touch subscription fields
+        // One-time — add to credit_hours only, never touch subscription fields
         const { data: currentClient } = await supabase
           .from("clients")
-          .select(
-            "usage_hours_limit, usage_hours_used, plan, plan_type, stripe_subscription_id",
-          )
+          .select("plan, plan_type, stripe_subscription_id, credit_hours")
           .eq("id", clientId)
           .single();
 
-        const currentLimit = parseFloat(currentClient?.usage_hours_limit || 0);
-        const currentUsed = parseFloat(currentClient?.usage_hours_used || 0);
-        const remainingHours = Math.max(currentLimit - currentUsed, 0);
-        const newLimit = remainingHours + planDetails.hours;
-
-        // If user has active subscription — keep their plan and plan_type unchanged
+        const currentCredits = parseFloat(currentClient?.credit_hours || 0);
+        const newCredits = currentCredits + planDetails.hours;
         const hasActiveSubscription = !!currentClient?.stripe_subscription_id;
 
         await supabase
           .from("clients")
           .update({
+            // Only update plan/plan_type if no active subscription
             plan: hasActiveSubscription ? currentClient.plan : planDetails.plan,
             plan_type: hasActiveSubscription
               ? currentClient.plan_type
               : "one_time",
-            usage_hours_limit: newLimit,
+            credit_hours: newCredits,
             plan_started_at: now.toISOString(),
           })
           .eq("id", clientId);
@@ -316,9 +322,14 @@ router.post(
           event_type: "checkout.session.completed",
         });
 
-        await sendPaymentEmail(clientId, planDetails, paymentType);
+        await sendPaymentEmail(
+          clientId,
+          planDetails,
+          paymentType,
+          hasActiveSubscription,
+        );
         console.log(
-          `One-time: ${clientId} — ${planDetails.plan} — ${newLimit.toFixed(2)}hrs total`,
+          `One-time: ${clientId} — ${planDetails.plan} — ${newCredits.toFixed(2)} credit hrs total`,
         );
       } else if (isTrial) {
         // Trial subscription — grant hours immediately, no charge yet

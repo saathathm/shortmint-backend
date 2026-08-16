@@ -155,12 +155,15 @@ router.post("/process", authenticateJWT, async (req, res) => {
       });
     }
 
-    // Check usage limit
+    // Check usage limit — subscription hours + credit hours
     const hoursUsed = parseFloat(client.usage_hours_used) || 0;
     const hoursLimit = parseFloat(client.usage_hours_limit) || 0;
-    if (hoursUsed >= hoursLimit) {
+    const creditHours = parseFloat(client.credit_hours) || 0;
+    const totalHours = hoursLimit + creditHours;
+
+    if (hoursUsed >= totalHours) {
       return res.status(403).json({
-        error: `You've used all ${hoursLimit} hours in your ${client.plan} plan this month. Upgrade to get more hours.`,
+        error: `You've used all ${totalHours} hours available. Upgrade to get more hours.`,
         upgrade_required: true,
       });
     }
@@ -168,7 +171,7 @@ router.post("/process", authenticateJWT, async (req, res) => {
     // Validate selected range usage
     if (start_seconds !== undefined && end_seconds !== undefined) {
       const selectedHours = (end_seconds - start_seconds) / 3600;
-      const hoursRemaining = hoursLimit - hoursUsed;
+      const hoursRemaining = totalHours - hoursUsed;
       if (selectedHours > hoursRemaining) {
         return res.status(403).json({
           error: `This selection uses ${selectedHours.toFixed(2)} hrs but you only have ${hoursRemaining.toFixed(2)} hrs remaining. Adjust the range or upgrade your plan.`,
@@ -177,7 +180,7 @@ router.post("/process", authenticateJWT, async (req, res) => {
       }
     } else if (video_info?.duration) {
       const fullHours = parseFloat(video_info.duration) / 3600;
-      const hoursRemaining = hoursLimit - hoursUsed;
+      const hoursRemaining = totalHours - hoursUsed;
       if (fullHours > hoursRemaining) {
         return res.status(403).json({
           error: `This video uses ${fullHours.toFixed(2)} hrs but you only have ${hoursRemaining.toFixed(2)} hrs remaining. Upgrade your plan.`,
