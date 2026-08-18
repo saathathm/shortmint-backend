@@ -773,7 +773,7 @@ router.post(
             plan_type: "one_time",
             subscription_status: "inactive",
             usage_hours_limit: 0,
-            usage_hours_used: 0,
+            // usage_hours_used: 0,
             stripe_subscription_id: null,
             plan_expires_at: null,
             current_period_start: null,
