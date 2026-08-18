@@ -189,27 +189,6 @@ router.post("/checkout", authenticateJWT, async (req, res) => {
       return res.status(400).json({ error: "Invalid price ID" });
 
     const mode = payment_type === "one_time" ? "payment" : "subscription";
-
-    // If upgrading subscription — set old one to cancel at period end
-    if (client.stripe_subscription_id && mode === "subscription") {
-      try {
-        await stripe.subscriptions.update(client.stripe_subscription_id, {
-          cancel_at_period_end: true,
-        });
-        await supabase
-          .from("clients")
-          .update({
-            subscription_cancel_at_period_end: true,
-          })
-          .eq("id", client.id);
-        console.log(
-          `Set old subscription ${client.stripe_subscription_id} to cancel at period end`,
-        );
-      } catch (err) {
-        console.error("Failed to update old subscription:", err.message);
-      }
-    }
-
     const sessionConfig = {
       mode,
       payment_method_types: ["card"],
@@ -412,12 +391,31 @@ router.post(
         const periodEnd = new Date(
           stripeSubscription.current_period_end * 1000,
         );
-
         const { data: currentClient } = await supabase
           .from("clients")
           .select("usage_hours_limit, usage_hours_used, stripe_subscription_id")
           .eq("id", clientId)
           .single();
+
+        // Cancel old subscription only AFTER new payment confirmed
+        if (
+          currentClient?.stripe_subscription_id &&
+          currentClient.stripe_subscription_id !== session.subscription
+        ) {
+          try {
+            await stripe.subscriptions.update(
+              currentClient.stripe_subscription_id,
+              {
+                cancel_at_period_end: true,
+              },
+            );
+            console.log(
+              `Old subscription ${currentClient.stripe_subscription_id} set to cancel at period end`,
+            );
+          } catch (err) {
+            console.error("Failed to cancel old subscription:", err.message);
+          }
+        }
 
         const currentLimit = parseFloat(currentClient?.usage_hours_limit || 0);
         const currentUsed = parseFloat(currentClient?.usage_hours_used || 0);
