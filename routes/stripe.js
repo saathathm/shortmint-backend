@@ -7,37 +7,37 @@ const { sendMail } = require("../lib/mailer");
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-const TRIAL_PRICE_ID = "price_1ToKspHTjUJCdbgvSu1udGJC"; // Starter monthly
+const TRIAL_PRICE_ID = "price_1UB81gHTjUJCdbgv4yLpJfaz"; // Starter monthly
 const TRIAL_HOURS = 10;
 const TRIAL_DAYS = 7;
 
 const PLAN_MAP = {
-  price_1ToKspHTjUJCdbgvSu1udGJC: {
+  price_1UB81gHTjUJCdbgv4yLpJfaz: {
     plan: "starter",
     hours: 10,
     type: "subscription",
   },
-  price_1TuQU2HTjUJCdbgvt51virST: {
+  price_1UB85mHTjUJCdbgvppRkiPg7: {
     plan: "starter",
     hours: 10,
     type: "one_time",
   },
-  price_1ToKu7HTjUJCdbgvcLG0Qni0: {
+  price_1UB82YHTjUJCdbgvxLwU9d4d: {
     plan: "growth",
     hours: 25,
     type: "subscription",
   },
-  price_1TuQTQHTjUJCdbgvdlk1AiyS: {
+  price_1UB8ERHTjUJCdbgvDrY61p01: {
     plan: "growth",
     hours: 25,
     type: "one_time",
   },
-  price_1ToKuUHTjUJCdbgv7XRLSwIk: {
+  price_1UB82yHTjUJCdbgvpyjbPCi8: {
     plan: "pro",
     hours: 60,
     type: "subscription",
   },
-  price_1TuQScHTjUJCdbgvYhlKeJqN: { plan: "pro", hours: 60, type: "one_time" },
+  price_1UB8FXHTjUJCdbgv3kSdpqgA: { plan: "pro", hours: 60, type: "one_time" },
 };
 
 const mapSubscriptionStatus = (stripeStatus) => {
@@ -564,7 +564,7 @@ router.post(
         // Trial converted to paid — send conversion email
         sendMail({
           to: client.email,
-          subject: `Your ShortTrim trial has converted — $29 charged`,
+          subject: `Your ShortTrim trial has converted — $19 charged`,
           html: `
             <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
               <h1 style="color: #4F46E5; font-size: 24px; margin-bottom: 8px;">Your trial has ended</h1>
