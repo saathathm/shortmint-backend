@@ -7,37 +7,37 @@ const { sendMail } = require("../lib/mailer");
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-const TRIAL_PRICE_ID = "price_1UB81gHTjUJCdbgv4yLpJfaz"; // Starter monthly
+const TRIAL_PRICE_ID = "price_1UCbAoIB3x0oivZ1InO6fdO9"; // Starter monthly
 const TRIAL_HOURS = 10;
 const TRIAL_DAYS = 7;
 
 const PLAN_MAP = {
-  price_1UB81gHTjUJCdbgv4yLpJfaz: {
+  price_1UCbAoIB3x0oivZ1InO6fdO9: {
     plan: "starter",
     hours: 10,
     type: "subscription",
   },
-  price_1UB85mHTjUJCdbgvppRkiPg7: {
+  price_1UCbGGIB3x0oivZ1mzde9Rhg: {
     plan: "starter",
     hours: 10,
     type: "one_time",
   },
-  price_1UB82YHTjUJCdbgvxLwU9d4d: {
+  price_1UCbBQIB3x0oivZ1OgoGflki: {
     plan: "growth",
     hours: 25,
     type: "subscription",
   },
-  price_1UB8ERHTjUJCdbgvDrY61p01: {
+  price_1UCbHKIB3x0oivZ1fcSXtVdP: {
     plan: "growth",
     hours: 25,
     type: "one_time",
   },
-  price_1UB82yHTjUJCdbgvpyjbPCi8: {
+  price_1UCbBxIB3x0oivZ1cTox2bnr: {
     plan: "pro",
     hours: 60,
     type: "subscription",
   },
-  price_1UB8FXHTjUJCdbgv3kSdpqgA: { plan: "pro", hours: 60, type: "one_time" },
+  price_1UCbHxIB3x0oivZ15VHNJkGm: { plan: "pro", hours: 60, type: "one_time" },
 };
 
 const mapSubscriptionStatus = (stripeStatus) => {
