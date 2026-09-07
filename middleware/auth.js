@@ -1,7 +1,4 @@
-const jwt = require("jsonwebtoken");
 const supabase = require("../lib/supabase");
-
-const JWT_SECRET = process.env.SUPABASE_JWT_SECRET;
 
 const authenticateJWT = async (req, res, next) => {
   try {
@@ -14,32 +11,24 @@ const authenticateJWT = async (req, res, next) => {
 
     const token = authHeader.split(" ")[1];
 
-    // Verify signature + expiry — jwt.verify throws on any failure
-    let decoded;
-    try {
-      decoded = jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] });
-    } catch (e) {
-      const msg = e.name === "TokenExpiredError" ? "Token expired" : "Invalid token";
+    // Validate via Supabase auth server — handles signature verification,
+    // expiry, and key rotation without requiring SUPABASE_JWT_SECRET locally.
+    const { data, error } = await supabase.auth.getUser(token);
+    if (error || !data?.user) {
+      const msg =
+        error?.message?.toLowerCase().includes("expired")
+          ? "Token expired"
+          : "Invalid token";
       return res.status(401).json({ error: msg });
     }
 
-    if (!decoded?.sub) {
-      return res.status(401).json({ error: "Invalid token" });
-    }
-
-    // Verify token is from our Supabase project
-    const expectedIss = `${process.env.SUPABASE_URL}/auth/v1`;
-    if (decoded.iss !== expectedIss) {
-      return res.status(401).json({ error: "Invalid token issuer" });
-    }
-
-    const userId = decoded.sub;
+    const user = data.user;
 
     // Fetch client row
     const { data: client, error: clientError } = await supabase
       .from("clients")
       .select("*")
-      .eq("id", userId)
+      .eq("id", user.id)
       .single();
 
     if (clientError || !client) {
@@ -47,9 +36,9 @@ const authenticateJWT = async (req, res, next) => {
     }
 
     req.user = {
-      id: userId,
-      email: decoded.email,
-      app_metadata: decoded.app_metadata || {},
+      id: user.id,
+      email: user.email,
+      app_metadata: user.app_metadata || {},
     };
     req.client = client;
     next();
