@@ -3,7 +3,7 @@ const router = express.Router()
 const multer = require('multer')
 const path = require('path')
 const fs = require('fs')
-const { execSync } = require('child_process')
+const { spawnSync } = require('child_process')
 const { authenticateJWT } = require('../middleware/auth')
 
 const uploadDir = process.env.UPLOAD_DIR || '/root/.n8n-files/uploads'
@@ -50,13 +50,16 @@ router.post('/video', authenticateJWT, upload.single('video'), async (req, res) 
     let title = req.file.originalname.replace(/\.[^/.]+$/, '')
 
     try {
-      const ffprobeOut = execSync(
-        `ffprobe -v quiet -print_format json -show_format "${req.file.path}"`,
+      const ffprobeResult = spawnSync(
+        'ffprobe',
+        ['-v', 'quiet', '-print_format', 'json', '-show_format', req.file.path],
         { encoding: 'utf8', timeout: 30000 }
       )
-      const metadata = JSON.parse(ffprobeOut)
-      duration = Math.floor(parseFloat(metadata.format?.duration || 0))
-      if (metadata.format?.tags?.title) title = metadata.format.tags.title
+      if (!ffprobeResult.error && ffprobeResult.status === 0) {
+        const metadata = JSON.parse(ffprobeResult.stdout)
+        duration = Math.floor(parseFloat(metadata.format?.duration || 0))
+        if (metadata.format?.tags?.title) title = metadata.format.tags.title
+      }
     } catch (e) {
       console.warn('ffprobe failed:', e.message)
     }

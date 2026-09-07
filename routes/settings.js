@@ -1,6 +1,8 @@
 const express = require('express')
 const router = express.Router()
 const axios = require('axios')
+const crypto = require('crypto')
+const jwt = require('jsonwebtoken')
 const supabase = require('../lib/supabase')
 const { authenticateJWT } = require('../middleware/auth')
 
@@ -10,6 +12,14 @@ const REDIRECT_URI = `${process.env.FRONTEND_URL}/api/settings/youtube-callback`
 
 // Get YouTube OAuth URL (frontend calls this to get the redirect URL)
 router.get('/youtube-connect-url', authenticateJWT, async (req, res) => {
+  // State is a signed JWT: contains client ID + random nonce, expires in 15m
+  // This prevents CSRF — on callback we verify the signature before trusting the client ID
+  const stateToken = jwt.sign(
+    { clientId: req.client.id, nonce: crypto.randomBytes(16).toString('hex') },
+    process.env.SUPABASE_JWT_SECRET,
+    { expiresIn: '15m' }
+  )
+
   const params = new URLSearchParams({
     client_id: GOOGLE_CLIENT_ID,
     redirect_uri: REDIRECT_URI,
@@ -20,7 +30,7 @@ router.get('/youtube-connect-url', authenticateJWT, async (req, res) => {
     ].join(' '),
     access_type: 'offline',
     prompt: 'consent',
-    state: req.client.id
+    state: stateToken
   })
 
   const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`
@@ -29,9 +39,19 @@ router.get('/youtube-connect-url', authenticateJWT, async (req, res) => {
 
 // YouTube OAuth callback - handles the redirect from Google
 router.get('/youtube-callback', async (req, res) => {
-  const { code, state: clientId, error } = req.query
+  const { code, state, error } = req.query
 
-  if (error || !code || !clientId) {
+  if (error || !code || !state) {
+    return res.redirect(`${process.env.FRONTEND_URL}/settings?youtube=error`)
+  }
+
+  // Verify the state JWT to confirm this callback was initiated by our app
+  let clientId
+  try {
+    const decoded = jwt.verify(state, process.env.SUPABASE_JWT_SECRET, { algorithms: ['HS256'] })
+    clientId = decoded.clientId
+    if (!clientId) throw new Error('Missing clientId in state')
+  } catch {
     return res.redirect(`${process.env.FRONTEND_URL}/settings?youtube=error`)
   }
 

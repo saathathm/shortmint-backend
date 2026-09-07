@@ -244,7 +244,7 @@ router.post("/process", authenticateJWT, async (req, res) => {
   }
 });
 
-const { execSync } = require("child_process");
+const { spawnSync } = require("child_process");
 
 // GET /api/video/info?url=...
 router.get("/info", authenticateJWT, async (req, res) => {
@@ -258,12 +258,26 @@ router.get("/info", authenticateJWT, async (req, res) => {
       return res.status(400).json({ error: "Invalid URL format" });
     }
 
-    const output = execSync(`yt-dlp --no-playlist --dump-json "${url}"`, {
-      encoding: "utf8",
-      timeout: 60000,
-    });
+    const result = spawnSync(
+      "yt-dlp",
+      ["--no-playlist", "--dump-json", url],
+      { encoding: "utf8", timeout: 60000 },
+    );
 
-    const data = JSON.parse(output);
+    if (result.error) {
+      if (result.error.code === "ENOENT") {
+        throw new Error("yt-dlp is not installed or not in PATH");
+      }
+      throw result.error;
+    }
+    if (result.status !== 0) {
+      throw new Error(result.stderr || "yt-dlp exited with non-zero status");
+    }
+    if (!result.stdout?.trim()) {
+      throw new Error("yt-dlp returned no output for this URL");
+    }
+
+    const data = JSON.parse(result.stdout);
 
     return res.json({
       title: data.title || "Untitled",
@@ -276,21 +290,12 @@ router.get("/info", authenticateJWT, async (req, res) => {
   } catch (err) {
     console.error("Video info error:", err.message);
     if (err.message?.includes("private") || err.message?.includes("login")) {
-      return res.status(400).json({
-        error: "This video is private or requires login.",
-        message: err.message || null,
-      });
+      return res.status(400).json({ error: "This video is private or requires login." });
     }
     if (err.message?.includes("not found") || err.message?.includes("404")) {
-      return res.status(400).json({
-        error: "Video not found. Please check the URL.",
-        message: err.message || null,
-      });
+      return res.status(400).json({ error: "Video not found. Please check the URL." });
     }
-    return res.status(400).json({
-      error: "Could not fetch video info. Check the URL and try again.",
-      message: err.message || null,
-    });
+    return res.status(400).json({ error: "Could not fetch video info. Check the URL and try again." });
   }
 });
 

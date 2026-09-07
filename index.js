@@ -1,6 +1,8 @@
 require('dotenv').config()
 const express = require('express')
 const cors = require('cors')
+const helmet = require('helmet')
+const rateLimit = require('express-rate-limit')
 
 const authRoutes = require('./routes/auth')
 const videoRoutes = require('./routes/video')
@@ -14,6 +16,9 @@ const feedbackRoutes = require('./routes/feedback')
 const app = express()
 const PORT = process.env.PORT || 3001
 
+// Security headers
+app.use(helmet())
+
 // CORS
 app.use(cors({
   origin: [
@@ -25,6 +30,27 @@ app.use(cors({
   methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }))
+
+// Rate limiting — strict on auth, lenient on everything else
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please try again later.' }
+})
+
+const generalLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests. Please try again later.' }
+})
+
+app.use('/api/auth/login', authLimiter)
+app.use('/api/auth/signup', authLimiter)
+app.use('/api', generalLimiter)
 
 // Stripe webhook needs raw body — must be before express.json()
 app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }))
@@ -52,15 +78,27 @@ app.use((req, res) => {
   res.status(404).json({ error: `Route ${req.method} ${req.path} not found` })
 })
 
-// Global error handler
+// Global error handler — never expose internal details in production
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err)
   if (err.code === 'LIMIT_FILE_SIZE') {
     return res.status(413).json({ error: 'File too large. Maximum size is 500MB.' })
   }
-  res.status(500).json({ error: err.message || 'Internal server error' })
+  const message = process.env.NODE_ENV === 'production'
+    ? 'Internal server error'
+    : (err.message || 'Internal server error')
+  res.status(500).json({ error: message })
 })
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`ShortTrim backend running on port ${PORT}`)
+})
+
+// Graceful shutdown on SIGTERM (PM2 stop/restart)
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received — shutting down gracefully')
+  server.close(() => {
+    console.log('Server closed')
+    process.exit(0)
+  })
 })
