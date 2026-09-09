@@ -244,7 +244,7 @@ router.post("/process", authenticateJWT, async (req, res) => {
   }
 });
 
-const { spawnSync } = require("child_process");
+const { execFile } = require("child_process");
 
 // GET /api/video/info?url=...
 router.get("/info", authenticateJWT, async (req, res) => {
@@ -258,26 +258,27 @@ router.get("/info", authenticateJWT, async (req, res) => {
       return res.status(400).json({ error: "Invalid URL format" });
     }
 
-    const result = spawnSync(
-      "yt-dlp",
-      ["--no-playlist", "--dump-json", url],
-      { encoding: "utf8", timeout: 60000 },
-    );
+    const cookieArgs = require("fs").existsSync("/root/youtube-cookies.txt")
+      ? ["--cookies", "/root/youtube-cookies.txt"]
+      : [];
 
-    if (result.error) {
-      if (result.error.code === "ENOENT") {
-        throw new Error("yt-dlp is not installed or not in PATH");
-      }
-      throw result.error;
-    }
-    if (result.status !== 0) {
-      throw new Error(result.stderr || "yt-dlp exited with non-zero status");
-    }
-    if (!result.stdout?.trim()) {
+    const stdout = await new Promise((resolve, reject) => {
+      execFile(
+        "yt-dlp",
+        [...cookieArgs, "--no-playlist", "--dump-json", url],
+        { encoding: "utf8", timeout: 60000, maxBuffer: 10 * 1024 * 1024 },
+        (err, stdout, stderr) => {
+          if (err) return reject(new Error(stderr || err.message));
+          resolve(stdout);
+        }
+      );
+    });
+
+    if (!stdout?.trim()) {
       throw new Error("yt-dlp returned no output for this URL");
     }
 
-    const data = JSON.parse(result.stdout);
+    const data = JSON.parse(stdout);
 
     return res.json({
       title: data.title || "Untitled",
