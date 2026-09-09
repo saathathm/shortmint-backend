@@ -13,7 +13,7 @@ const REDIRECT_URI = `${process.env.FRONTEND_URL}/api/settings/youtube-callback`
 // Get YouTube OAuth URL (frontend calls this to get the redirect URL)
 router.get('/youtube-connect-url', authenticateJWT, async (req, res) => {
   // State is a signed JWT: contains client ID + random nonce, expires in 15m
-  // This prevents CSRF — on callback we verify the signature before trusting the client ID
+  // This prevents CSRF – on callback we verify the signature before trusting the client ID
   const stateToken = jwt.sign(
     { clientId: req.client.id, nonce: crypto.randomBytes(16).toString('hex') },
     process.env.SUPABASE_JWT_SECRET,

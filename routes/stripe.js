@@ -7,10 +7,6 @@ const { sendMail } = require("../lib/mailer");
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-const TRIAL_PRICE_ID = "price_1UCbAoIB3x0oivZ1InO6fdO9"; // Starter monthly
-const TRIAL_HOURS = 10;
-const TRIAL_DAYS = 7;
-
 const PLAN_MAP = {
   price_1UCbAoIB3x0oivZ1InO6fdO9: {
     plan: "starter",
@@ -73,7 +69,6 @@ const sendPaymentEmail = async (
   const planName =
     planDetails.plan.charAt(0).toUpperCase() + planDetails.plan.slice(1);
   const isOneTime = paymentType === "payment";
-
   sendMail({
     to: clientData.email,
     subject: isTopUp
@@ -92,7 +87,7 @@ const sendPaymentEmail = async (
         <div style="background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; padding: 20px; margin: 24px 0;">
           <p style="margin: 0 0 8px 0; color: #111827; font-weight: 600;">Summary</p>
           <p style="margin: 0; color: #6B7280; font-size: 14px;">Hours: <strong>${planDetails.hours} hours${isTopUp ? " (never expire)" : ""}</strong></p>
-          <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Type: <strong>${isOneTime ? "One-time purchase" : "Monthly subscription — renews automatically"}</strong></p>
+          <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Type: <strong>${isOneTime ? "One-time purchase" : "Monthly subscription – renews automatically"}</strong></p>
         </div>
         <a href="https://shorttrim.com/dashboard"
           style="display: inline-block; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
@@ -101,81 +96,14 @@ const sendPaymentEmail = async (
         <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
         <p style="color: #9CA3AF; font-size: 13px;">
           Need help? Reply to this email or chat with us at shorttrim.com.<br/>
-          — The ShortTrim team
+          – The ShortTrim team
         </p>
       </div>
     `,
   }).catch((err) => console.error("Payment email error:", err.message));
 };
 
-// POST /api/stripe/trial — start 7-day free trial
-router.post("/trial", authenticateJWT, async (req, res) => {
-  try {
-    const client = req.client;
-
-    // Block if already used trial
-    if (client.has_used_trial) {
-      return res.status(400).json({
-        error:
-          "You have already used your free trial. Please choose a plan to continue.",
-      });
-    }
-
-    // Block if already on active subscription
-    if (
-      client.stripe_subscription_id &&
-      client.subscription_status === "active"
-    ) {
-      return res.status(400).json({
-        error: "You already have an active subscription.",
-      });
-    }
-
-    // Create or reuse Stripe customer
-    let customerId = client.stripe_customer_id;
-    if (!customerId) {
-      const customer = await stripe.customers.create({
-        email: client.email,
-        name: client.name,
-        metadata: { client_id: client.id },
-      });
-      customerId = customer.id;
-      await supabase
-        .from("clients")
-        .update({
-          stripe_customer_id: customerId,
-        })
-        .eq("id", client.id);
-    }
-
-    // Create Stripe checkout session with trial
-    const session = await stripe.checkout.sessions.create({
-      mode: "subscription",
-      payment_method_types: ["card"],
-      customer: customerId,
-      line_items: [{ price: TRIAL_PRICE_ID, quantity: 1 }],
-      subscription_data: {
-        trial_period_days: TRIAL_DAYS,
-        metadata: { is_trial: "true", client_id: client.id },
-      },
-      client_reference_id: client.id,
-      success_url: `${process.env.FRONTEND_URL}/dashboard?trial=started`,
-      cancel_url: `${process.env.FRONTEND_URL}/dashboard`,
-      metadata: {
-        price_id: TRIAL_PRICE_ID,
-        payment_type: "subscription",
-        is_trial: "true",
-      },
-    });
-
-    return res.json({ checkout_url: session.url });
-  } catch (err) {
-    console.error("Trial checkout error:", err);
-    return res.status(500).json({ error: "Failed to start trial." });
-  }
-});
-
-// POST /api/stripe/checkout — direct subscription or one-time
+// POST /api/stripe/checkout – subscription or one-time
 router.post("/checkout", authenticateJWT, async (req, res) => {
   try {
     const { price_id, payment_type } = req.body;
@@ -183,12 +111,12 @@ router.post("/checkout", authenticateJWT, async (req, res) => {
 
     if (!price_id)
       return res.status(400).json({ error: "price_id is required" });
-
     const planDetails = PLAN_MAP[price_id];
     if (!planDetails)
       return res.status(400).json({ error: "Invalid price ID" });
 
     const mode = payment_type === "one_time" ? "payment" : "subscription";
+
     const sessionConfig = {
       mode,
       payment_method_types: ["card"],
@@ -240,7 +168,6 @@ router.post(
       const clientId = session.client_reference_id;
       const priceId = session.metadata?.price_id;
       const paymentType = session.metadata?.payment_type;
-      const isTrial = session.metadata?.is_trial === "true";
       const planDetails = PLAN_MAP[priceId];
 
       if (!planDetails) {
@@ -263,7 +190,7 @@ router.post(
       const now = new Date();
 
       if (paymentType === "payment") {
-        // One-time — add to credit_hours only, never touch subscription fields
+        // One-time – add to credit_hours only, never touch subscription fields
         const { data: currentClient } = await supabase
           .from("clients")
           .select("plan, plan_type, stripe_subscription_id, credit_hours")
@@ -277,7 +204,6 @@ router.post(
         await supabase
           .from("clients")
           .update({
-            // Only update plan/plan_type if no active subscription
             plan: hasActiveSubscription ? currentClient.plan : planDetails.plan,
             plan_type: hasActiveSubscription
               ? currentClient.plan_type
@@ -308,80 +234,10 @@ router.post(
           hasActiveSubscription,
         );
         console.log(
-          `One-time: ${clientId} — ${planDetails.plan} — ${newCredits.toFixed(2)} credit hrs total`,
-        );
-      } else if (isTrial) {
-        // Trial subscription — grant hours immediately, no charge yet
-        const stripeSubscription = await stripe.subscriptions.retrieve(
-          session.subscription,
-        );
-        const trialEnd = new Date(stripeSubscription.trial_end * 1000);
-        const periodEnd = new Date(
-          stripeSubscription.current_period_end * 1000,
-        );
-        const periodStart = new Date(
-          stripeSubscription.current_period_start * 1000,
-        );
-
-        await supabase
-          .from("clients")
-          .update({
-            plan: "starter",
-            plan_type: "subscription",
-            subscription_status: "active",
-            usage_hours_limit: TRIAL_HOURS,
-            usage_hours_used: 0,
-            plan_started_at: now.toISOString(),
-            plan_expires_at: periodEnd.toISOString(),
-            current_period_start: periodStart.toISOString(),
-            current_period_end: periodEnd.toISOString(),
-            stripe_subscription_id: session.subscription,
-            stripe_customer_id: session.customer,
-            subscription_cancel_at_period_end: false,
-            has_used_trial: true,
-            trial_ends_at: trialEnd.toISOString(),
-          })
-          .eq("id", clientId);
-
-        // No payment record — no charge yet
-        // Send trial started email
-        const { data: clientData } = await supabase
-          .from("clients")
-          .select("name, email")
-          .eq("id", clientId)
-          .single();
-
-        if (clientData) {
-          sendMail({
-            to: clientData.email,
-            subject: "Your ShortTrim free trial has started 🎉",
-            html: `
-              <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
-                <h1 style="color: #4F46E5; font-size: 24px; margin-bottom: 8px;">Your free trial is active!</h1>
-                <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
-                  Hi ${clientData.name}, your 7-day free trial has started. You have <strong>10 hours</strong> to use — no charge until ${trialEnd.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}.
-                </p>
-                <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
-                  If you cancel before ${trialEnd.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}, you won't be charged anything.
-                </p>
-                <a href="https://shorttrim.com/dashboard"
-                  style="display: inline-block; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
-                  Start creating →
-                </a>
-                <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
-                <p style="color: #9CA3AF; font-size: 13px;">
-                  — The ShortTrim team
-                </p>
-              </div>
-            `,
-          }).catch((err) => console.error("Trial email error:", err.message));
-        }
-
-        console.log(
-          `Trial started: ${clientId} — 10hrs — trial ends ${trialEnd.toISOString()}`,
+          `One-time: ${clientId} – ${planDetails.plan} – ${newCredits.toFixed(2)} credit hrs total`,
         );
       } else {
-        // Direct subscription — no trial
+        // Direct subscription
         const stripeSubscription = await stripe.subscriptions.retrieve(
           session.subscription,
         );
@@ -391,6 +247,7 @@ router.post(
         const periodEnd = new Date(
           stripeSubscription.current_period_end * 1000,
         );
+
         const { data: currentClient } = await supabase
           .from("clients")
           .select("usage_hours_limit, usage_hours_used, stripe_subscription_id")
@@ -459,29 +316,18 @@ router.post(
 
         await sendPaymentEmail(clientId, planDetails, paymentType);
         console.log(
-          `Subscription: ${clientId} — ${planDetails.plan} — ${newLimit}hrs`,
+          `Subscription: ${clientId} – ${planDetails.plan} – ${newLimit}hrs`,
         );
       }
     }
 
-    // ✅ invoice.paid — handles both trial conversion and monthly renewal
+    // ✅ invoice.paid – renewal only
     if (event.type === "invoice.paid") {
       const invoice = event.data.object;
       const customerId = invoice.customer;
       const subscriptionId = invoice.subscription;
 
-      // Handle trial conversion (billing_reason: subscription_cycle after trial)
-      const isTrial =
-        invoice.billing_reason === "subscription_create" &&
-        invoice.amount_paid === 0;
-
-      // Skip free trial invoice (no charge)
-      if (isTrial) {
-        console.log(`Trial invoice ignored (no charge): ${invoice.id}`);
-        return res.json({ received: true });
-      }
-
-      // Only handle renewals and trial conversions with actual charge
+      // Only handle renewals
       if (
         invoice.billing_reason !== "subscription_cycle" &&
         invoice.billing_reason !== "subscription_update"
@@ -520,26 +366,18 @@ router.post(
       const planDetails = PLAN_MAP[priceId];
       if (!planDetails) return res.json({ received: true });
 
-      // Check if this is trial converting to paid
-      const isTrialConversion =
-        invoice.billing_reason === "subscription_cycle" &&
-        stripeSubscription.trial_end &&
-        Math.abs(new Date(stripeSubscription.trial_end * 1000) - new Date()) <
-          86400000 * 2;
-
       await supabase
         .from("clients")
         .update({
           plan: planDetails.plan,
           plan_type: "subscription",
-          usage_hours_used: isTrialConversion ? 0 : 0, // always reset on billing
+          usage_hours_used: 0,
           usage_hours_limit: planDetails.hours,
           subscription_status: "active",
           plan_expires_at: periodEnd.toISOString(),
           current_period_start: periodStart.toISOString(),
           current_period_end: periodEnd.toISOString(),
           subscription_cancel_at_period_end: false,
-          trial_ends_at: null, // clear trial end date
         })
         .eq("id", client.id);
 
@@ -554,82 +392,44 @@ router.post(
         plan: planDetails.plan,
         plan_type: "subscription",
         hours_granted: planDetails.hours,
-        event_type: isTrialConversion ? "trial_converted" : "invoice.paid",
+        event_type: "invoice.paid",
       });
 
       const planName =
         planDetails.plan.charAt(0).toUpperCase() + planDetails.plan.slice(1);
 
-      if (isTrialConversion) {
-        // Trial converted to paid — send conversion email
-        sendMail({
-          to: client.email,
-          subject: `Your ShortTrim trial has converted — $19 charged`,
-          html: `
-            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
-              <h1 style="color: #4F46E5; font-size: 24px; margin-bottom: 8px;">Your trial has ended</h1>
-              <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
-                Hi ${client.name}, your 7-day free trial has ended and your Starter plan subscription has started.
-              </p>
-              <div style="background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; padding: 20px; margin: 24px 0;">
-                <p style="margin: 0 0 8px 0; color: #111827; font-weight: 600;">Billing summary</p>
-                <p style="margin: 0; color: #6B7280; font-size: 14px;">Plan: <strong>Starter</strong></p>
-                <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Amount charged: <strong>$${(invoice.amount_paid / 100).toFixed(2)}</strong></p>
-                <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Hours: <strong>10 hours/month</strong></p>
-                <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Next renewal: <strong>${periodEnd.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</strong></p>
-              </div>
-              <a href="https://shorttrim.com/dashboard"
-                style="display: inline-block; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
-                Continue creating →
-              </a>
-              <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
-              <p style="color: #9CA3AF; font-size: 13px;">
-                — The ShortTrim team
-              </p>
-            </div>
-          `,
-        }).catch((err) =>
-          console.error("Trial conversion email error:", err.message),
-        );
+      sendMail({
+        to: client.email,
+        subject: `ShortTrim ${planName} renewed 🔄`,
+        html: `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
+          <h1 style="color: #4F46E5; font-size: 24px; margin-bottom: 8px;">Your plan has renewed!</h1>
+          <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
+            Hi ${client.name}, your <strong>${planName}</strong> plan has renewed and your hours have been reset.
+          </p>
+          <div style="background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; padding: 20px; margin: 24px 0;">
+            <p style="margin: 0 0 8px 0; color: #111827; font-weight: 600;">Renewal summary</p>
+            <p style="margin: 0; color: #6B7280; font-size: 14px;">Plan: <strong>${planName}</strong></p>
+            <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Hours reset to: <strong>${planDetails.hours} hours</strong></p>
+            <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Amount charged: <strong>$${(invoice.amount_paid / 100).toFixed(2)}</strong></p>
+            <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Next renewal: <strong>${periodEnd.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</strong></p>
+          </div>
+          <a href="https://shorttrim.com/dashboard"
+            style="display: inline-block; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
+            Start creating →
+          </a>
+          <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
+          <p style="color: #9CA3AF; font-size: 13px;">
+            Need help? Reply to this email or chat with us at shorttrim.com.<br/>
+            – The ShortTrim team
+          </p>
+        </div>
+      `,
+      }).catch((err) => console.error("Renewal email error:", err.message));
 
-        console.log(
-          `Trial converted to paid: ${client.id} — $${(invoice.amount_paid / 100).toFixed(2)}`,
-        );
-      } else {
-        // Regular renewal email
-        sendMail({
-          to: client.email,
-          subject: `ShortTrim ${planName} renewed 🔄`,
-          html: `
-            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
-              <h1 style="color: #4F46E5; font-size: 24px; margin-bottom: 8px;">Your plan has renewed!</h1>
-              <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
-                Hi ${client.name}, your <strong>${planName}</strong> plan has renewed and your hours have been reset.
-              </p>
-              <div style="background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 12px; padding: 20px; margin: 24px 0;">
-                <p style="margin: 0 0 8px 0; color: #111827; font-weight: 600;">Renewal summary</p>
-                <p style="margin: 0; color: #6B7280; font-size: 14px;">Plan: <strong>${planName}</strong></p>
-                <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Hours reset to: <strong>${planDetails.hours} hours</strong></p>
-                <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Amount charged: <strong>$${(invoice.amount_paid / 100).toFixed(2)}</strong></p>
-                <p style="margin: 4px 0 0 0; color: #6B7280; font-size: 14px;">Next renewal: <strong>${periodEnd.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</strong></p>
-              </div>
-              <a href="https://shorttrim.com/dashboard"
-                style="display: inline-block; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
-                Start creating →
-              </a>
-              <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
-              <p style="color: #9CA3AF; font-size: 13px;">
-                Need help? Reply to this email or chat with us at shorttrim.com.<br/>
-                — The ShortTrim team
-              </p>
-            </div>
-          `,
-        }).catch((err) => console.error("Renewal email error:", err.message));
-
-        console.log(
-          `Renewal: ${client.id} — ${planDetails.plan} — hours reset to ${planDetails.hours}`,
-        );
-      }
+      console.log(
+        `Renewal: ${client.id} – ${planDetails.plan} – hours reset to ${planDetails.hours}`,
+      );
     }
 
     // ✅ invoice.payment_failed
@@ -648,9 +448,7 @@ router.post(
 
       await supabase
         .from("clients")
-        .update({
-          subscription_status: "past_due",
-        })
+        .update({ subscription_status: "past_due" })
         .eq("id", client.id);
 
       await savePayment({
@@ -667,48 +465,48 @@ router.post(
 
       sendMail({
         to: client.email,
-        subject: "Action needed — ShortTrim payment failed",
+        subject: "Action needed – ShortTrim payment failed",
         html: `
-          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
-            <h1 style="color: #EF4444; font-size: 22px; margin-bottom: 8px;">Payment failed</h1>
-            <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
-              Hi ${client.name}, we couldn't process your payment for ShortTrim.
-            </p>
-            <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
-              Please update your payment method to keep your account active.
-              Stripe will retry automatically over the next few days.
-            </p>
-            <a href="https://shorttrim.com/settings"
-              style="display: inline-block; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
-              Update payment method →
-            </a>
-            <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
-            <p style="color: #9CA3AF; font-size: 13px;">
-              Need help? Reply to this email or chat with us at shorttrim.com.<br/>
-              — The ShortTrim team
-            </p>
-          </div>
-        `,
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
+          <h1 style="color: #EF4444; font-size: 22px; margin-bottom: 8px;">Payment failed</h1>
+          <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
+            Hi ${client.name}, we couldn't process your payment for ShortTrim.
+          </p>
+          <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
+            Please update your payment method to keep your account active.
+            Stripe will retry automatically over the next few days.
+          </p>
+          <a href="https://shorttrim.com/settings"
+            style="display: inline-block; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
+            Update payment method →
+          </a>
+          <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
+          <p style="color: #9CA3AF; font-size: 13px;">
+            Need help? Reply to this email or chat with us at shorttrim.com.<br/>
+            – The ShortTrim team
+          </p>
+        </div>
+      `,
       }).catch((err) =>
         console.error("Payment failed email error:", err.message),
       );
 
       sendMail({
         to: "hello@shorttrim.com",
-        subject: `⚠️ Payment failed — ${client.email}`,
+        subject: `⚠️ Payment failed – ${client.email}`,
         html: `
-          <div style="font-family: sans-serif; padding: 24px;">
-            <h2 style="color: #EF4444;">Payment Failed</h2>
-            <p><strong>User:</strong> ${client.name} (${client.email})</p>
-            <p><strong>Amount:</strong> $${(invoice.amount_due / 100).toFixed(2)}</p>
-            <p><strong>Reason:</strong> ${invoice.last_payment_error?.message || "Unknown"}</p>
-          </div>
-        `,
+        <div style="font-family: sans-serif; padding: 24px;">
+          <h2 style="color: #EF4444;">Payment Failed</h2>
+          <p><strong>User:</strong> ${client.name} (${client.email})</p>
+          <p><strong>Amount:</strong> $${(invoice.amount_due / 100).toFixed(2)}</p>
+          <p><strong>Reason:</strong> ${invoice.last_payment_error?.message || "Unknown"}</p>
+        </div>
+      `,
       }).catch((err) =>
         console.error("Admin payment failed email error:", err.message),
       );
 
-      console.log(`Payment failed: ${client.id} — marked past_due`);
+      console.log(`Payment failed: ${client.id} – marked past_due`);
     }
 
     // ✅ customer.subscription.updated
@@ -725,7 +523,7 @@ router.post(
       if (!client) return res.json({ received: true });
 
       if (client.stripe_subscription_id !== subscription.id) {
-        console.log(`Subscription updated event for old sub — ignoring`);
+        console.log(`Subscription updated event for old sub – ignoring`);
         return res.json({ received: true });
       }
 
@@ -744,7 +542,7 @@ router.post(
         .eq("id", client.id);
 
       console.log(
-        `Subscription updated: ${client.id} — status: ${subscription.status}`,
+        `Subscription updated: ${client.id} – status: ${subscription.status}`,
       );
     }
 
@@ -761,19 +559,18 @@ router.post(
 
       if (client) {
         if (client.stripe_subscription_id !== subscription.id) {
-          console.log(`Old subscription deleted — ignoring`);
+          console.log(`Old subscription deleted – ignoring`);
           return res.json({ received: true });
         }
 
-        // Reset to no access — hours to 0
         await supabase
           .from("clients")
           .update({
-            plan: "trial",
+            plan: "free",
             plan_type: "one_time",
             subscription_status: "inactive",
             usage_hours_limit: 0,
-            // usage_hours_used: 0,
+            // usage_hours_used NOT reset – credit hours consumption persists
             stripe_subscription_id: null,
             plan_expires_at: null,
             current_period_start: null,
@@ -783,48 +580,33 @@ router.post(
           })
           .eq("id", client.id);
 
-        // Check if this was cancelled during trial
-        const wasTrial =
-          subscription.trial_end &&
-          new Date(subscription.trial_end * 1000) > new Date();
-
         sendMail({
           to: client.email,
-          subject: wasTrial
-            ? "Your ShortTrim trial has been cancelled"
-            : "Your ShortTrim subscription has ended",
+          subject: "Your ShortTrim subscription has ended",
           html: `
-            <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
-              <h1 style="color: #4F46E5; font-size: 22px; margin-bottom: 8px;">
-                ${wasTrial ? "Trial cancelled" : "Subscription ended"}
-              </h1>
-              <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
-                Hi ${client.name}, ${
-                  wasTrial
-                    ? "your free trial has been cancelled. You have not been charged."
-                    : "your ShortTrim subscription has ended and your account has been moved back to the free tier."
-                }
-              </p>
-              <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
-                We'd love to have you back. You can subscribe anytime.
-              </p>
-              <a href="https://shorttrim.com/pricing"
-                style="display: inline-block; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
-                View plans →
-              </a>
-              <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
-              <p style="color: #9CA3AF; font-size: 13px;">
-                — The ShortTrim team
-              </p>
-            </div>
-          `,
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 32px 24px;">
+            <h1 style="color: #4F46E5; font-size: 22px; margin-bottom: 8px;">Subscription ended</h1>
+            <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
+              Hi ${client.name}, your ShortTrim subscription has ended and your account has been moved back to the free tier.
+            </p>
+            <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
+              We'd love to have you back. You can subscribe anytime.
+            </p>
+            <a href="https://shorttrim.com/pricing"
+              style="display: inline-block; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
+              View plans →
+            </a>
+            <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
+            <p style="color: #9CA3AF; font-size: 13px;">
+              – The ShortTrim team
+            </p>
+          </div>
+        `,
         }).catch((err) =>
           console.error("Cancellation email error:", err.message),
         );
 
-        console.log(
-          `Subscription deleted — ${client.id} — ${wasTrial ? "trial cancelled" : "downgraded"}`,
-        );
+        console.log(`Subscription deleted – ${client.id} – moved to free`);
       }
     }
 
@@ -870,7 +652,7 @@ router.post(
                   <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
                   <p style="color: #9CA3AF; font-size: 13px;">
                     Questions? Reply to this email or chat with us at shorttrim.com.<br/>
-                    — The ShortTrim team
+                    – The ShortTrim team
                   </p>
                 </div>
               `,
@@ -899,31 +681,20 @@ router.post("/cancel", authenticateJWT, async (req, res) => {
       return res.status(400).json({ error: "No active subscription found." });
     }
 
-    const isOnTrial =
-      client.trial_ends_at && new Date(client.trial_ends_at) > new Date();
+    // Regular subscription – cancel at period end, keep access
+    await stripe.subscriptions.update(client.stripe_subscription_id, {
+      cancel_at_period_end: true,
+    });
 
-    if (isOnTrial) {
-      // Cancel immediately — user hasn't been charged
-      await stripe.subscriptions.cancel(client.stripe_subscription_id);
-      // DB will be updated by customer.subscription.deleted webhook
-    } else {
-      // Regular subscription — cancel at period end, keep access
-      await stripe.subscriptions.update(client.stripe_subscription_id, {
-        cancel_at_period_end: true,
-      });
-      await supabase
-        .from("clients")
-        .update({
-          subscription_cancel_at_period_end: true,
-        })
-        .eq("id", client.id);
-    }
+    await supabase
+      .from("clients")
+      .update({ subscription_cancel_at_period_end: true })
+      .eq("id", client.id);
 
     return res.json({
       success: true,
-      message: isOnTrial
-        ? "Your trial has been cancelled. You will not be charged."
-        : "Your subscription will be cancelled at the end of the billing period. You'll keep access until then.",
+      message:
+        "Your subscription will be cancelled at the end of the billing period. You'll keep access until then.",
     });
   } catch (err) {
     console.error("Cancel subscription error:", err);

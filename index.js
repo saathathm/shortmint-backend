@@ -31,7 +31,7 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }))
 
-// Rate limiting — strict on auth, lenient on everything else
+// Rate limiting – strict on auth, lenient on everything else
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
@@ -52,7 +52,7 @@ app.use('/api/auth/login', authLimiter)
 app.use('/api/auth/signup', authLimiter)
 app.use('/api', generalLimiter)
 
-// Stripe webhook needs raw body — must be before express.json()
+// Stripe webhook needs raw body – must be before express.json()
 app.use('/api/stripe/webhook', express.raw({ type: 'application/json' }))
 
 // JSON body parser for everything else
@@ -78,7 +78,7 @@ app.use((req, res) => {
   res.status(404).json({ error: `Route ${req.method} ${req.path} not found` })
 })
 
-// Global error handler — never expose internal details in production
+// Global error handler – never expose internal details in production
 app.use((err, req, res, next) => {
   console.error('Unhandled error:', err)
   if (err.code === 'LIMIT_FILE_SIZE') {
@@ -96,7 +96,7 @@ const server = app.listen(PORT, () => {
 
 // Graceful shutdown on SIGTERM (PM2 stop/restart)
 process.on('SIGTERM', () => {
-  console.log('SIGTERM received — shutting down gracefully')
+  console.log('SIGTERM received – shutting down gracefully')
   server.close(() => {
     console.log('Server closed')
     process.exit(0)

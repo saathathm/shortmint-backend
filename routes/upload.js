@@ -33,7 +33,7 @@ const upload = multer({
   limits: { fileSize: 500 * 1024 * 1024 }
 })
 
-// POST /api/upload/video — upload file, return metadata only (no processing)
+// POST /api/upload/video – upload file, return metadata only (no processing)
 router.post('/video', authenticateJWT, upload.single('video'), async (req, res) => {
   try {
     const client = req.client
@@ -64,7 +64,7 @@ router.post('/video', authenticateJWT, upload.single('video'), async (req, res) 
       console.warn('ffprobe failed:', e.message)
     }
 
-    // Return upload info — processing happens separately via /api/video/process
+    // Return upload info – processing happens separately via /api/video/process
     return res.json({
       upload_id: req.file.filename,
       file_path: req.file.path,
@@ -82,12 +82,12 @@ router.post('/video', authenticateJWT, upload.single('video'), async (req, res) 
   }
 })
 
-// DELETE /api/upload/:uploadId — delete uploaded file
+// DELETE /api/upload/:uploadId – delete uploaded file
 router.delete('/:uploadId', authenticateJWT, async (req, res) => {
   try {
     const { uploadId } = req.params
 
-    // Security — only allow deleting files belonging to this client
+    // Security – only allow deleting files belonging to this client
     if (!uploadId.startsWith(req.client.id)) {
       return res.status(403).json({ error: 'Not allowed' })
     }

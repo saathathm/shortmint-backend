@@ -11,7 +11,7 @@ const authenticateJWT = async (req, res, next) => {
 
     const token = authHeader.split(" ")[1];
 
-    // Validate via Supabase auth server — handles signature verification,
+    // Validate via Supabase auth server – handles signature verification,
     // expiry, and key rotation without requiring SUPABASE_JWT_SECRET locally.
     const { data, error } = await supabase.auth.getUser(token);
     if (error || !data?.user) {

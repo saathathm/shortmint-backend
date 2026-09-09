@@ -47,15 +47,15 @@ router.post('/', async (req, res) => {
             We got your message and we'll be in touch soon with tips, updates, and creator resources.
           </p>
           <p style="color: #6B7280; font-size: 16px; line-height: 1.6;">
-            In the meantime — did you know ShortTrim has a free trial? No card needed.
+            In the meantime – did you know ShortTrim gives you 2 free hours when you sign up? No card needed.
           </p>
           <a href="https://shorttrim.com/signup"
             style="display: inline-block; margin-top: 20px; padding: 12px 28px; background: #4F46E5; color: white; text-decoration: none; border-radius: 10px; font-weight: 600; font-size: 15px;">
-            Try ShortTrim free →
+            Get started free →
           </a>
           <hr style="border: none; border-top: 1px solid #E5E7EB; margin: 32px 0;" />
           <p style="color: #9CA3AF; font-size: 13px;">
-            — The ShortTrim team
+            – The ShortTrim team
           </p>
         </div>
       `

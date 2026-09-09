@@ -155,7 +155,7 @@ router.post("/process", authenticateJWT, async (req, res) => {
       });
     }
 
-    // Check usage limit — subscription hours + credit hours
+    // Check usage limit – subscription hours + credit hours
     const hoursUsed = parseFloat(client.usage_hours_used) || 0;
     const hoursLimit = parseFloat(client.usage_hours_limit) || 0;
     const creditHours = parseFloat(client.credit_hours) || 0;
@@ -450,7 +450,7 @@ router.post("/reprocess/:videoId", authenticateJWT, async (req, res) => {
       return res.status(404).json({ error: "Video not found" });
     }
 
-    // Uploaded videos — file deleted on failure, can't reprocess
+    // Uploaded videos – file deleted on failure, can't reprocess
     if (!video.youtube_url) {
       return res.status(400).json({
         error: "uploaded_video",
