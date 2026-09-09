@@ -6,7 +6,7 @@ const { authenticateJWT } = require("../middleware/auth");
 
 // Platform tier access control
 const PLATFORM_TIERS = {
-  trial: [
+  free: [
     "youtube",
     "facebook",
     "instagram",
@@ -135,7 +135,7 @@ router.post("/process", authenticateJWT, async (req, res) => {
         });
       }
       const allowedPlatforms =
-        PLATFORM_TIERS[client.plan] || PLATFORM_TIERS["trial"];
+        PLATFORM_TIERS[client.plan] || PLATFORM_TIERS["free"];
       if (!allowedPlatforms.includes(platform)) {
         const planNeeded = Object.entries(PLATFORM_TIERS).find(
           ([, platforms]) => platforms.includes(platform),
