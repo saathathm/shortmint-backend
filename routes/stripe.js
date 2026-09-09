@@ -8,32 +8,32 @@ const { sendMail } = require("../lib/mailer");
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 const PLAN_MAP = {
-  price_1UCbAoIB3x0oivZ1InO6fdO9: {
+  price_1UB81gHTjUJCdbgv4yLpJfaz: {
     plan: "starter",
     hours: 10,
     type: "subscription",
   },
-  price_1UCbGGIB3x0oivZ1mzde9Rhg: {
+  price_1UB85mHTjUJCdbgvppRkiPg7: {
     plan: "starter",
     hours: 10,
     type: "one_time",
   },
-  price_1UCbBQIB3x0oivZ1OgoGflki: {
+  price_1UB82YHTjUJCdbgvxLwU9d4d: {
     plan: "growth",
     hours: 25,
     type: "subscription",
   },
-  price_1UCbHKIB3x0oivZ1fcSXtVdP: {
+  price_1UB8ERHTjUJCdbgvDrY61p01: {
     plan: "growth",
     hours: 25,
     type: "one_time",
   },
-  price_1UCbBxIB3x0oivZ1cTox2bnr: {
+  price_1UB82yHTjUJCdbgvpyjbPCi8: {
     plan: "pro",
     hours: 60,
     type: "subscription",
   },
-  price_1UCbHxIB3x0oivZ15VHNJkGm: { plan: "pro", hours: 60, type: "one_time" },
+  price_1UB8FXHTjUJCdbgv3kSdpqgA: { plan: "pro", hours: 60, type: "one_time" },
 };
 
 const mapSubscriptionStatus = (stripeStatus) => {
