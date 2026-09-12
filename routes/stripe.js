@@ -50,8 +50,88 @@ const mapSubscriptionStatus = (stripeStatus) => {
 };
 
 const savePayment = async (data) => {
-  const { error } = await supabase.from("payments").insert(data);
+  const { data: row, error } = await supabase
+    .from("payments")
+    .insert(data)
+    .select()
+    .single();
   if (error) console.error("Failed to save payment record:", error.message);
+  return row;
+};
+
+const maybeCreateCommission = async ({
+  clientId,
+  amountPaid,
+  type,
+  stripePaymentIntentId = null,
+  stripeInvoiceId = null,
+}) => {
+  try {
+    const { data: client } = await supabase
+      .from("clients")
+      .select("referred_by")
+      .eq("id", clientId)
+      .single();
+    if (!client?.referred_by) return;
+
+    const { data: affiliate } = await supabase
+      .from("affiliates")
+      .select("id, status")
+      .eq("referral_code", client.referred_by)
+      .maybeSingle();
+    if (!affiliate || affiliate.status !== "active") return;
+
+    const eventType = type === "one_time" ? "one_time" : "subscription";
+
+    if (type === "one_time") {
+      const { count } = await supabase
+        .from("affiliate_commissions")
+        .select("id", { count: "exact", head: true })
+        .eq("affiliate_id", affiliate.id)
+        .eq("client_id", clientId)
+        .eq("event_type", "one_time");
+      if (count > 0) return;
+
+      const commission = parseFloat((amountPaid / 100 * 0.30).toFixed(2));
+      await supabase.from("affiliate_commissions").insert({
+        affiliate_id: affiliate.id,
+        client_id: clientId,
+        stripe_payment_intent_id: stripePaymentIntentId,
+        event_type: eventType,
+        payment_amount: amountPaid / 100,
+        commission_amount: commission,
+        status: "pending",
+      });
+      await supabase.rpc("increment_affiliate_balance", { aff_id: affiliate.id, amount: commission });
+      console.log(`Commission (one_time): $${commission} for affiliate ${affiliate.id}`);
+    }
+
+    if (type === "subscription") {
+      const { count } = await supabase
+        .from("affiliate_commissions")
+        .select("id", { count: "exact", head: true })
+        .eq("affiliate_id", affiliate.id)
+        .eq("client_id", clientId)
+        .eq("event_type", "subscription");
+      if (count >= 12) return;
+
+      const commission = parseFloat((amountPaid / 100 * 0.30).toFixed(2));
+      await supabase.from("affiliate_commissions").insert({
+        affiliate_id: affiliate.id,
+        client_id: clientId,
+        stripe_invoice_id: stripeInvoiceId,
+        event_type: eventType,
+        payment_amount: amountPaid / 100,
+        commission_amount: commission,
+        month_number: (count || 0) + 1,
+        status: "pending",
+      });
+      await supabase.rpc("increment_affiliate_balance", { aff_id: affiliate.id, amount: commission });
+      console.log(`Commission (subscription month ${(count || 0) + 1}): $${commission} for affiliate ${affiliate.id}`);
+    }
+  } catch (err) {
+    console.error("Commission creation error:", err.message);
+  }
 };
 
 const sendPaymentEmail = async (
@@ -213,7 +293,7 @@ router.post(
           })
           .eq("id", clientId);
 
-        await savePayment({
+        const oneTimePaymentRow = await savePayment({
           client_id: clientId,
           stripe_session_id: session.id,
           stripe_payment_intent_id: session.payment_intent,
@@ -225,6 +305,13 @@ router.post(
           plan_type: "one_time",
           hours_granted: planDetails.hours,
           event_type: "checkout.session.completed",
+        });
+
+        await maybeCreateCommission({
+          clientId,
+          amountPaid: session.amount_total,
+          type: "one_time",
+          stripePaymentIntentId: session.payment_intent,
         });
 
         await sendPaymentEmail(
@@ -300,7 +387,7 @@ router.post(
           })
           .eq("id", clientId);
 
-        await savePayment({
+        const subPaymentRow = await savePayment({
           client_id: clientId,
           stripe_session_id: session.id,
           stripe_subscription_id: session.subscription,
@@ -312,6 +399,13 @@ router.post(
           plan_type: "subscription",
           hours_granted: planDetails.hours,
           event_type: "checkout.session.completed",
+        });
+
+        await maybeCreateCommission({
+          clientId,
+          amountPaid: session.amount_total,
+          type: "subscription",
+          stripeInvoiceId: session.invoice,
         });
 
         await sendPaymentEmail(clientId, planDetails, paymentType);
@@ -381,7 +475,7 @@ router.post(
         })
         .eq("id", client.id);
 
-      await savePayment({
+      const renewalPaymentRow = await savePayment({
         client_id: client.id,
         stripe_invoice_id: invoice.id,
         stripe_subscription_id: subscriptionId,
@@ -393,6 +487,13 @@ router.post(
         plan_type: "subscription",
         hours_granted: planDetails.hours,
         event_type: "invoice.paid",
+      });
+
+      await maybeCreateCommission({
+        clientId: client.id,
+        amountPaid: invoice.amount_paid,
+        type: "subscription",
+        stripeInvoiceId: invoice.id,
       });
 
       const planName =

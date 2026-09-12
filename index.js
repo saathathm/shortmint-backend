@@ -12,6 +12,8 @@ const stripeRoutes = require("./routes/stripe");
 const settingsRoutes = require("./routes/settings");
 const leadsRoutes = require("./routes/leads");
 const feedbackRoutes = require("./routes/feedback");
+const affiliateRoutes = require("./routes/affiliate");
+const adminRoutes = require("./routes/affiliateAdmin");
 
 const app = express();
 app.set("trust proxy", 1);
@@ -53,7 +55,15 @@ const generalLimiter = rateLimit({
 
 app.use("/api/auth/login", authLimiter);
 app.use("/api/auth/signup", authLimiter);
+app.use("/api/affiliate/login", authLimiter);
+app.use("/api/affiliate/register", authLimiter);
+app.use("/api/admin/login", authLimiter);
 app.use("/api", generalLimiter);
+
+// Referral redirect – /r/:code → /?ref=code (before body parsers)
+app.get("/r/:code", (req, res) => {
+  res.redirect(`${process.env.FRONTEND_URL || "https://shorttrim.com"}/?ref=${req.params.code}`);
+});
 
 // Stripe webhook needs raw body – must be before express.json()
 app.use("/api/stripe/webhook", express.raw({ type: "application/json" }));
@@ -79,6 +89,8 @@ app.use("/api/stripe", stripeRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/leads", leadsRoutes);
 app.use("/api/feedback", feedbackRoutes);
+app.use("/api/affiliate", affiliateRoutes);
+app.use("/api/admin", adminRoutes);
 
 // 404 handler
 app.use((req, res) => {

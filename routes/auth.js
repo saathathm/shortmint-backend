@@ -7,7 +7,7 @@ const { sendMail } = require("../lib/mailer");
 // Sign up with email + password
 router.post("/signup", async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, referral_code } = req.body;
     if (!name || !email || !password) {
       return res
         .status(400)
@@ -34,6 +34,7 @@ router.post("/signup", async (req, res) => {
         usage_hours_limit: 0,
         has_used_trial: false,
         credit_hours: 2,
+        referred_by: referral_code || null,
       },
       { onConflict: "id" },
     );
@@ -146,7 +147,7 @@ router.get("/refresh-client", authenticateJWT, async (req, res) => {
 // Google OAuth callback handler
 router.post("/google-callback", async (req, res) => {
   try {
-    const { access_token } = req.body;
+    const { access_token, referral_code } = req.body;
     if (!access_token)
       return res.status(400).json({ error: "Access token required" });
 
@@ -174,6 +175,7 @@ router.post("/google-callback", async (req, res) => {
         usage_hours_limit: 0,
         has_used_trial: false,
         credit_hours: 2,
+        referred_by: referral_code || null,
       });
 
       sendMail({
