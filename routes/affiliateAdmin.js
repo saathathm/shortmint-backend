@@ -49,7 +49,7 @@ router.get("/stats", authenticateAdmin, async (req, res) => {
         .from("affiliate_payouts")
         .select("id", { count: "exact", head: true })
         .eq("status", "pending"),
-      supabase.from("affiliate_commissions").select("amount"),
+      supabase.from("affiliate_commissions").select("commission_amount"),
     ]);
 
     const totalRevenue = (revenueRows || []).reduce(
@@ -57,7 +57,7 @@ router.get("/stats", authenticateAdmin, async (req, res) => {
       0,
     );
     const totalCommissions = (commissionRows || []).reduce(
-      (sum, c) => sum + parseFloat(c.amount || 0),
+      (sum, c) => sum + parseFloat(c.commission_amount || 0),
       0,
     );
 
