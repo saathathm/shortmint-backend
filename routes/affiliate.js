@@ -231,19 +231,17 @@ router.post("/payout/request", authenticateAffiliate, async (req, res) => {
     if (affiliate.stripe_account_status !== "active")
       return res.status(400).json({ error: "Stripe Connect account must be active before requesting a payout" });
 
-    const { data: payout, error: payoutErr } = await supabase
+    // Deduct from balance and create payout request atomically
+    await supabase
+      .from("affiliates")
+      .update({ payout_balance: balance - balance }) // drain full balance
+      .eq("id", req.affiliate.id);
+
+    const { data: payout } = await supabase
       .from("affiliate_payouts")
       .insert({ affiliate_id: req.affiliate.id, amount: balance })
       .select()
       .single();
-
-    if (payoutErr || !payout)
-      return res.status(500).json({ error: "Failed to create payout request" });
-
-    await supabase
-      .from("affiliates")
-      .update({ payout_balance: 0 })
-      .eq("id", req.affiliate.id);
 
     return res.json({ payout });
   } catch (err) {
