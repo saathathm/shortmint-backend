@@ -22,14 +22,25 @@ const PORT = process.env.PORT || 3001;
 // Security headers
 app.use(helmet());
 
-// CORS
+// CORS — build origin list including www/non-www variants automatically
+const _frontendUrl = process.env.FRONTEND_URL || "https://shorttrim.com";
+const _allowedOrigins = new Set([
+  _frontendUrl,
+  "http://localhost:3000",
+  "http://localhost:5173",
+]);
+try {
+  const u = new URL(_frontendUrl);
+  if (u.hostname.startsWith("www.")) {
+    _allowedOrigins.add(`${u.protocol}//${u.hostname.slice(4)}`);
+  } else {
+    _allowedOrigins.add(`${u.protocol}//www.${u.hostname}`);
+  }
+} catch {}
+
 app.use(
   cors({
-    origin: [
-      process.env.FRONTEND_URL || "https://shorttrim.com",
-      "http://localhost:3000",
-      "http://localhost:5173",
-    ],
+    origin: [..._allowedOrigins],
     credentials: true,
     methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],

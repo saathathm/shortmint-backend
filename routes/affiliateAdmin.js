@@ -84,7 +84,7 @@ router.get("/users", authenticateAdmin, async (req, res) => {
 
     let query = supabase
       .from("clients")
-      .select("id, name, email, plan, plan_type, credit_hours, usage_hours_used, created_at, referred_by", {
+      .select("id, name, email, plan, plan_type, credit_hours, usage_hours_used, usage_hours_limit, created_at, referred_by", {
         count: "exact",
       })
       .order("created_at", { ascending: false })
