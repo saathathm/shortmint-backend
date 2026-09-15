@@ -226,8 +226,8 @@ router.post("/payout/request", authenticateAffiliate, async (req, res) => {
     if (!affiliate) return res.status(404).json({ error: "Affiliate not found" });
 
     const balance = parseFloat(affiliate.payout_balance || 0);
-    if (balance < 50)
-      return res.status(400).json({ error: "Minimum payout is $50" });
+    if (balance < 3)
+      return res.status(400).json({ error: "Minimum payout is $3" });
     if (affiliate.stripe_account_status !== "active")
       return res.status(400).json({ error: "Stripe Connect account must be active before requesting a payout" });
 
