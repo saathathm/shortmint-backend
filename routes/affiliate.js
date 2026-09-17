@@ -267,7 +267,6 @@ router.get("/connect/onboard", authenticateAffiliate, async (req, res) => {
       const account = await stripe.accounts.create({
         type: "express",
         email: affiliate.email,
-        capabilities: { transfers: { requested: true } },
       });
       accountId = account.id;
       await supabase
@@ -285,8 +284,8 @@ router.get("/connect/onboard", authenticateAffiliate, async (req, res) => {
 
     return res.json({ url: accountLink.url });
   } catch (err) {
-    console.error("Stripe Connect onboard error:", err);
-    return res.status(500).json({ error: "Internal server error" });
+    console.error("Stripe Connect onboard error:", err?.message || err);
+    return res.status(500).json({ error: err?.message || "Failed to start Stripe onboarding" });
   }
 });
 
