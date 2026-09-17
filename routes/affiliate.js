@@ -263,11 +263,17 @@ router.get("/connect/onboard", authenticateAffiliate, async (req, res) => {
 
     let accountId = affiliate.stripe_account_id;
 
-    if (!accountId) {
-      const account = await stripe.accounts.create({
-        type: "express",
-        email: affiliate.email,
+    const createAccountLink = async (acctId) => {
+      return stripe.accountLinks.create({
+        account: acctId,
+        refresh_url: `${process.env.FRONTEND_URL}/affiliate/dashboard/payouts`,
+        return_url: `${process.env.FRONTEND_URL}/affiliate/dashboard/payouts`,
+        type: "account_onboarding",
       });
+    };
+
+    if (!accountId) {
+      const account = await stripe.accounts.create({ type: "express", email: affiliate.email });
       accountId = account.id;
       await supabase
         .from("affiliates")
@@ -275,12 +281,23 @@ router.get("/connect/onboard", authenticateAffiliate, async (req, res) => {
         .eq("id", req.affiliate.id);
     }
 
-    const accountLink = await stripe.accountLinks.create({
-      account: accountId,
-      refresh_url: `${process.env.FRONTEND_URL}/affiliate/dashboard/payouts`,
-      return_url: `${process.env.FRONTEND_URL}/affiliate/dashboard/payouts`,
-      type: "account_onboarding",
-    });
+    let accountLink;
+    try {
+      accountLink = await createAccountLink(accountId);
+    } catch (linkErr) {
+      // Stale account ID (e.g. test vs live mode mismatch) — recreate
+      if (linkErr?.message?.includes("not connected to your platform") || linkErr?.message?.includes("does not exist")) {
+        const account = await stripe.accounts.create({ type: "express", email: affiliate.email });
+        accountId = account.id;
+        await supabase
+          .from("affiliates")
+          .update({ stripe_account_id: accountId, stripe_account_status: "pending" })
+          .eq("id", req.affiliate.id);
+        accountLink = await createAccountLink(accountId);
+      } else {
+        throw linkErr;
+      }
+    }
 
     return res.json({ url: accountLink.url });
   } catch (err) {
