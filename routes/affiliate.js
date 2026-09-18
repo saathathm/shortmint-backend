@@ -128,7 +128,7 @@ router.get("/stats", authenticateAffiliate, async (req, res) => {
 
     const { data: affiliate } = await supabase
       .from("affiliates")
-      .select("referral_code, payout_balance, total_earned")
+      .select("referral_code, total_earned")
       .eq("id", affiliateId)
       .single();
 
@@ -141,20 +141,38 @@ router.get("/stats", authenticateAffiliate, async (req, res) => {
     startOfMonth.setDate(1);
     startOfMonth.setHours(0, 0, 0, 0);
 
-    const { data: monthCommissions } = await supabase
-      .from("affiliate_commissions")
-      .select("commission_amount")
-      .eq("affiliate_id", affiliateId)
-      .gte("created_at", startOfMonth.toISOString());
+    const cutoff = new Date(Date.now() - 9 * 24 * 60 * 60 * 1000).toISOString();
+
+    const [{ data: monthCommissions }, { data: pendingCommissions }] = await Promise.all([
+      supabase
+        .from("affiliate_commissions")
+        .select("commission_amount")
+        .eq("affiliate_id", affiliateId)
+        .gte("created_at", startOfMonth.toISOString()),
+      supabase
+        .from("affiliate_commissions")
+        .select("commission_amount, created_at")
+        .eq("affiliate_id", affiliateId)
+        .eq("status", "pending"),
+    ]);
 
     const monthEarned = (monthCommissions || []).reduce(
       (sum, c) => sum + parseFloat(c.commission_amount),
       0,
     );
 
+    const available_balance = (pendingCommissions || [])
+      .filter((c) => c.created_at <= cutoff)
+      .reduce((sum, c) => sum + parseFloat(c.commission_amount), 0);
+
+    const clearing_balance = (pendingCommissions || [])
+      .filter((c) => c.created_at > cutoff)
+      .reduce((sum, c) => sum + parseFloat(c.commission_amount), 0);
+
     return res.json({
       total_earned: parseFloat(affiliate.total_earned || 0),
-      payout_balance: parseFloat(affiliate.payout_balance || 0),
+      available_balance: parseFloat(available_balance.toFixed(2)),
+      clearing_balance: parseFloat(clearing_balance.toFixed(2)),
       referral_count: referralCount || 0,
       month_earned: parseFloat(monthEarned.toFixed(2)),
     });
@@ -219,30 +237,51 @@ router.post("/payout/request", authenticateAffiliate, async (req, res) => {
   try {
     const { data: affiliate } = await supabase
       .from("affiliates")
-      .select("payout_balance, stripe_account_id, stripe_account_status")
+      .select("stripe_account_status, payout_balance")
       .eq("id", req.affiliate.id)
       .single();
 
     if (!affiliate) return res.status(404).json({ error: "Affiliate not found" });
-
-    const balance = parseFloat(affiliate.payout_balance || 0);
-    if (balance < 3)
-      return res.status(400).json({ error: "Minimum payout is $3" });
     if (affiliate.stripe_account_status !== "active")
       return res.status(400).json({ error: "Stripe Connect account must be active before requesting a payout" });
 
+    const cutoff = new Date(Date.now() - 9 * 24 * 60 * 60 * 1000).toISOString();
+
+    const { data: eligibleCommissions } = await supabase
+      .from("affiliate_commissions")
+      .select("id, commission_amount")
+      .eq("affiliate_id", req.affiliate.id)
+      .eq("status", "pending")
+      .lte("created_at", cutoff);
+
+    const availableAmount = (eligibleCommissions || []).reduce(
+      (sum, c) => sum + parseFloat(c.commission_amount),
+      0,
+    );
+
+    if (availableAmount < 3)
+      return res.status(400).json({
+        error: "No eligible balance yet. Commissions are available 9 days after they are earned.",
+      });
+
     const { data: payout, error: payoutErr } = await supabase
       .from("affiliate_payouts")
-      .insert({ affiliate_id: req.affiliate.id, amount: balance })
+      .insert({ affiliate_id: req.affiliate.id, amount: parseFloat(availableAmount.toFixed(2)) })
       .select()
       .single();
 
     if (payoutErr || !payout)
       return res.status(500).json({ error: "Failed to create payout request" });
 
+    const eligibleIds = eligibleCommissions.map((c) => c.id);
+    await supabase
+      .from("affiliate_commissions")
+      .update({ status: "paid" })
+      .in("id", eligibleIds);
+
     await supabase
       .from("affiliates")
-      .update({ payout_balance: 0 })
+      .update({ payout_balance: Math.max(0, parseFloat(affiliate.payout_balance || 0) - availableAmount) })
       .eq("id", req.affiliate.id);
 
     return res.json({ payout });
