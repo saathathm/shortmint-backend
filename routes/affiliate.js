@@ -165,14 +165,24 @@ router.get("/stats", authenticateAffiliate, async (req, res) => {
       .filter((c) => c.created_at <= cutoff)
       .reduce((sum, c) => sum + parseFloat(c.commission_amount), 0);
 
-    const clearing_balance = (pendingCommissions || [])
-      .filter((c) => c.created_at > cutoff)
-      .reduce((sum, c) => sum + parseFloat(c.commission_amount), 0);
+    const clearingCommissions = (pendingCommissions || []).filter((c) => c.created_at > cutoff);
+    const clearing_balance = clearingCommissions.reduce(
+      (sum, c) => sum + parseFloat(c.commission_amount),
+      0,
+    );
+
+    const oldestClearing = clearingCommissions
+      .map((c) => new Date(c.created_at))
+      .sort((a, b) => a - b)[0];
+    const next_available_at = oldestClearing
+      ? new Date(oldestClearing.getTime() + 9 * 24 * 60 * 60 * 1000).toISOString()
+      : null;
 
     return res.json({
       total_earned: parseFloat(affiliate.total_earned || 0),
       available_balance: parseFloat(available_balance.toFixed(2)),
       clearing_balance: parseFloat(clearing_balance.toFixed(2)),
+      next_available_at,
       referral_count: referralCount || 0,
       month_earned: parseFloat(monthEarned.toFixed(2)),
     });
@@ -324,7 +334,7 @@ router.get("/connect/onboard", authenticateAffiliate, async (req, res) => {
     try {
       accountLink = await createAccountLink(accountId);
     } catch (linkErr) {
-      // Stale account ID (e.g. test vs live mode mismatch) — recreate
+      // Stale account ID (e.g. test vs live mode mismatch) – recreate
       if (linkErr?.message?.includes("not connected to your platform") || linkErr?.message?.includes("does not exist")) {
         const account = await stripe.accounts.create({ type: "express", email: affiliate.email });
         accountId = account.id;

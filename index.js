@@ -22,7 +22,7 @@ const PORT = process.env.PORT || 3001;
 // Security headers
 app.use(helmet());
 
-// CORS — build origin list including www/non-www variants automatically
+// CORS – build origin list including www/non-www variants automatically
 const _frontendUrl = process.env.FRONTEND_URL || "https://shorttrim.com";
 const _allowedOrigins = new Set([
   _frontendUrl,
